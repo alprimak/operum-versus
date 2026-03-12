@@ -107,6 +107,13 @@ export const tasks = {
     apiRequest(`/tasks/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (id: string) =>
     apiRequest(`/tasks/${id}`, { method: 'DELETE' }),
+  search: (filters: { query?: string; status?: string; priority?: string; assignee?: string; project_id?: string }) => {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(filters)) {
+      if (value) params.set(key, value);
+    }
+    return apiRequest<{ tasks: any[] }>(`/tasks/search?${params.toString()}`);
+  },
 };
 
 // Dashboard

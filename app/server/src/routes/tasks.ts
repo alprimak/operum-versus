@@ -156,6 +156,71 @@ taskRouter.put('/:id', (req: AuthRequest, res: Response) => {
   }
 });
 
+taskRouter.get('/search', (req: AuthRequest, res: Response) => {
+  const db = getDb();
+  const { query, status, priority, assignee, project_id } = req.query;
+
+  // Get all project IDs the user is a member of
+  let projectIds: string[];
+  if (project_id) {
+    // Verify membership for specified project
+    const member = db.prepare(
+      'SELECT 1 FROM project_members WHERE project_id = ? AND user_id = ?'
+    ).get(project_id, req.userId);
+    if (!member) {
+      res.status(403).json({ error: 'Not a member of this project' });
+      return;
+    }
+    projectIds = [project_id as string];
+  } else {
+    projectIds = (db.prepare(
+      'SELECT project_id FROM project_members WHERE user_id = ?'
+    ).all(req.userId) as any[]).map(r => r.project_id);
+  }
+
+  if (projectIds.length === 0) {
+    res.json({ tasks: [] });
+    return;
+  }
+
+  const conditions: string[] = [
+    `t.project_id IN (${projectIds.map(() => '?').join(',')})`,
+    't.deleted_at IS NULL',
+  ];
+  const params: any[] = [...projectIds];
+
+  if (query) {
+    conditions.push('(t.title LIKE ? OR t.description LIKE ?)');
+    const searchTerm = `%${query}%`;
+    params.push(searchTerm, searchTerm);
+  }
+
+  if (status) {
+    conditions.push('t.status = ?');
+    params.push(status);
+  }
+
+  if (priority) {
+    conditions.push('t.priority = ?');
+    params.push(priority);
+  }
+
+  if (assignee) {
+    conditions.push('t.assignee_id = ?');
+    params.push(assignee);
+  }
+
+  const tasks = db.prepare(`
+    SELECT t.*, u.name as assignee_name
+    FROM tasks t
+    LEFT JOIN users u ON t.assignee_id = u.id
+    WHERE ${conditions.join(' AND ')}
+    ORDER BY t.created_at DESC
+  `).all(...params);
+
+  res.json({ tasks });
+});
+
 // Soft delete
 taskRouter.delete('/:id', (req: AuthRequest, res: Response) => {
   const db = getDb();
