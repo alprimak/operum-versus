@@ -167,7 +167,7 @@ taskRouter.delete('/:id', (req: AuthRequest, res: Response) => {
   }
 
   // Soft delete — sets deleted_at but doesn't remove the row
-  db.prepare('UPDATE tasks SET deleted_at = datetime("now") WHERE id = ?')
+  db.prepare("UPDATE tasks SET deleted_at = datetime('now') WHERE id = ?")
     .run(req.params.id);
 
   logActivity(task.project_id, req.params.id, req.userId!, 'task_deleted',
