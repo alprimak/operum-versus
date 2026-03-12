@@ -69,6 +69,32 @@ export function initDatabase(): void {
       FOREIGN KEY (created_by) REFERENCES users(id)
     );
 
+    CREATE TABLE IF NOT EXISTS comments (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      content TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS notifications (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      type TEXT NOT NULL,
+      comment_id TEXT,
+      task_id TEXT,
+      project_id TEXT,
+      from_user_id TEXT NOT NULL,
+      message TEXT NOT NULL,
+      read INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (user_id) REFERENCES users(id),
+      FOREIGN KEY (from_user_id) REFERENCES users(id)
+    );
+
     CREATE TABLE IF NOT EXISTS activity_log (
       id TEXT PRIMARY KEY,
       project_id TEXT NOT NULL,

@@ -119,3 +119,25 @@ export const activity = {
   listByProject: (projectId: string, limit = 50, offset = 0) =>
     apiRequest<{ activities: any[] }>(`/activity/project/${projectId}?limit=${limit}&offset=${offset}`),
 };
+
+// Comments
+export const comments = {
+  listByTask: (taskId: string) =>
+    apiRequest<{ comments: any[] }>(`/comments/task/${taskId}`),
+  create: (data: { task_id: string; content: string }) =>
+    apiRequest('/comments', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: string, data: { content: string }) =>
+    apiRequest(`/comments/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  delete: (id: string) =>
+    apiRequest(`/comments/${id}`, { method: 'DELETE' }),
+};
+
+// Notifications
+export const notifications = {
+  list: (limit = 50, offset = 0) =>
+    apiRequest<{ notifications: any[]; unreadCount: number }>(`/notifications?limit=${limit}&offset=${offset}`),
+  markRead: (id: string) =>
+    apiRequest(`/notifications/${id}/read`, { method: 'PUT' }),
+  markAllRead: () =>
+    apiRequest('/notifications/read-all', { method: 'PUT' }),
+};
