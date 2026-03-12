@@ -54,8 +54,6 @@ describe('Authentication', () => {
     expect(res.body.accessToken).toBeDefined();
   });
 
-  // BUG B3: This test SHOULD fail — refresh tokens should be single-use
-  // but currently they can be reused indefinitely
   it('should invalidate refresh token after use', async () => {
     const registerRes = await request(app)
       .post('/api/auth/register')
@@ -74,5 +72,41 @@ describe('Authentication', () => {
       .post('/api/auth/refresh')
       .send({ refreshToken });
     expect(second.status).toBe(403);
+  });
+
+  it('should reject concurrent refresh attempts with same token', async () => {
+    const registerRes = await request(app)
+      .post('/api/auth/register')
+      .send({ email: 'test2@test.com', password: 'password123', name: 'Test User 2' });
+
+    const refreshToken = registerRes.body.refreshToken;
+
+    // Fire two refresh requests concurrently
+    const [first, second] = await Promise.all([
+      request(app).post('/api/auth/refresh').send({ refreshToken }),
+      request(app).post('/api/auth/refresh').send({ refreshToken }),
+    ]);
+
+    // Exactly one should succeed, the other should fail
+    const statuses = [first.status, second.status].sort();
+    expect(statuses).toEqual([200, 403]);
+  });
+
+  it('should allow chained refresh (new token from first refresh works)', async () => {
+    const registerRes = await request(app)
+      .post('/api/auth/register')
+      .send({ email: 'test3@test.com', password: 'password123', name: 'Test User 3' });
+
+    // First refresh
+    const first = await request(app)
+      .post('/api/auth/refresh')
+      .send({ refreshToken: registerRes.body.refreshToken });
+    expect(first.status).toBe(200);
+
+    // Second refresh with NEW token from first refresh should succeed
+    const second = await request(app)
+      .post('/api/auth/refresh')
+      .send({ refreshToken: first.body.refreshToken });
+    expect(second.status).toBe(200);
   });
 });

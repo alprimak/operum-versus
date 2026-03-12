@@ -22,9 +22,21 @@ export function clearTokens(): void {
   localStorage.removeItem('refreshToken');
 }
 
-// BUG B3: No mutex on refresh — multiple concurrent 401s each trigger
-// a separate refresh request with the same refresh token.
+let refreshPromise: Promise<boolean> | null = null;
+
 async function refreshAccessToken(): Promise<boolean> {
+  // Mutex: if a refresh is already in progress, wait for it
+  if (refreshPromise) return refreshPromise;
+
+  refreshPromise = doRefresh();
+  try {
+    return await refreshPromise;
+  } finally {
+    refreshPromise = null;
+  }
+}
+
+async function doRefresh(): Promise<boolean> {
   if (!refreshToken) return false;
 
   try {
@@ -37,7 +49,7 @@ async function refreshAccessToken(): Promise<boolean> {
     if (!res.ok) return false;
 
     const data = await res.json();
-    setTokens(data.accessToken, data.refreshToken || refreshToken);
+    setTokens(data.accessToken, data.refreshToken);
     return true;
   } catch {
     return false;

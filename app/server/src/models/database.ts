@@ -69,6 +69,13 @@ export function initDatabase(): void {
       FOREIGN KEY (created_by) REFERENCES users(id)
     );
 
+    CREATE TABLE IF NOT EXISTS used_refresh_tokens (
+      token_hash TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      used_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    );
+
     CREATE TABLE IF NOT EXISTS activity_log (
       id TEXT PRIMARY KEY,
       project_id TEXT NOT NULL,
