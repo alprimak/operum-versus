@@ -7,6 +7,15 @@ import { generateTokens, verifyRefreshToken, authenticateToken, AuthRequest } fr
 
 export const authRouter = Router();
 
+// In-memory refresh token blacklist (invalidated tokens)
+// In production, this should be persisted (Redis, DB, etc.)
+const usedRefreshTokens = new Set<string>();
+
+// Exposed for testing
+export function clearRefreshTokenBlacklist(): void {
+  usedRefreshTokens.clear();
+}
+
 const registerSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8),
@@ -74,11 +83,16 @@ authRouter.post('/login', async (req: Request, res: Response) => {
   }
 });
 
-// BUG B3: No token invalidation — refresh tokens can be reused
 authRouter.post('/refresh', (req: Request, res: Response) => {
   const { refreshToken } = req.body;
   if (!refreshToken) {
     res.status(400).json({ error: 'Refresh token required' });
+    return;
+  }
+
+  // Reject already-used refresh tokens
+  if (usedRefreshTokens.has(refreshToken)) {
+    res.status(403).json({ error: 'Refresh token already used' });
     return;
   }
 
@@ -87,6 +101,9 @@ authRouter.post('/refresh', (req: Request, res: Response) => {
     res.status(403).json({ error: 'Invalid refresh token' });
     return;
   }
+
+  // Invalidate this token — single-use enforcement
+  usedRefreshTokens.add(refreshToken);
 
   const tokens = generateTokens(payload.userId);
   res.json(tokens);

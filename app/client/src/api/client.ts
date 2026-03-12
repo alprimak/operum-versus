@@ -22,26 +22,41 @@ export function clearTokens(): void {
   localStorage.removeItem('refreshToken');
 }
 
-// BUG B3: No mutex on refresh — multiple concurrent 401s each trigger
-// a separate refresh request with the same refresh token.
+// Mutex for token refresh — only one refresh at a time
+let refreshPromise: Promise<boolean> | null = null;
+
 async function refreshAccessToken(): Promise<boolean> {
   if (!refreshToken) return false;
 
-  try {
-    const res = await fetch(`${API_URL}/auth/refresh`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refreshToken }),
-    });
-
-    if (!res.ok) return false;
-
-    const data = await res.json();
-    setTokens(data.accessToken, data.refreshToken || refreshToken);
-    return true;
-  } catch {
-    return false;
+  // If a refresh is already in progress, wait for it instead of starting another
+  if (refreshPromise) {
+    return refreshPromise;
   }
+
+  refreshPromise = (async () => {
+    try {
+      const res = await fetch(`${API_URL}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken }),
+      });
+
+      if (!res.ok) {
+        clearTokens();
+        return false;
+      }
+
+      const data = await res.json();
+      setTokens(data.accessToken, data.refreshToken || refreshToken!);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      refreshPromise = null;
+    }
+  })();
+
+  return refreshPromise;
 }
 
 export async function apiRequest<T>(
@@ -59,7 +74,7 @@ export async function apiRequest<T>(
 
   let res = await fetch(`${API_URL}${path}`, { ...options, headers });
 
-  // On 401, try refreshing the token
+  // On 401, try refreshing the token (mutex ensures only one refresh at a time)
   if (res.status === 401 && refreshToken) {
     const refreshed = await refreshAccessToken();
     if (refreshed) {
