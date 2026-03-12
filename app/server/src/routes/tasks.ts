@@ -5,6 +5,15 @@ import { getDb } from '../models/database.js';
 import { authenticateToken, AuthRequest } from '../middleware/auth.js';
 import { logActivity } from '../utils/activity.js';
 
+// Normalize a date string to YYYY-MM-DD format (date portion only),
+// stripping any time/timezone component to prevent off-by-one errors.
+function normalizeDueDate(dateStr: string | null | undefined): string | null {
+  if (!dateStr) return null;
+  // Extract just the date portion (YYYY-MM-DD)
+  const match = dateStr.match(/^(\d{4}-\d{2}-\d{2})/);
+  return match ? match[1] : dateStr;
+}
+
 export const taskRouter = Router();
 taskRouter.use(authenticateToken);
 
@@ -77,7 +86,7 @@ taskRouter.post('/', (req: AuthRequest, res: Response) => {
       INSERT INTO tasks (id, project_id, title, description, priority, assignee_id, due_date, created_by)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).run(id, data.project_id, data.title, data.description || null,
-      data.priority || 'medium', data.assignee_id || null, data.due_date || null, req.userId);
+      data.priority || 'medium', data.assignee_id || null, normalizeDueDate(data.due_date), req.userId);
 
     logActivity(data.project_id, id, req.userId!, 'task_created', `Created task "${data.title}"`);
 
@@ -123,7 +132,7 @@ taskRouter.put('/:id', (req: AuthRequest, res: Response) => {
     for (const [key, value] of Object.entries(updates)) {
       if (value !== undefined) {
         fields.push(`${key} = ?`);
-        values.push(value);
+        values.push(key === 'due_date' && value ? normalizeDueDate(value as string) : value);
       }
     }
 
@@ -132,7 +141,7 @@ taskRouter.put('/:id', (req: AuthRequest, res: Response) => {
       return;
     }
 
-    fields.push('updated_at = datetime("now")');
+    fields.push("updated_at = datetime('now')");
     values.push(req.params.id);
 
     db.prepare(`UPDATE tasks SET ${fields.join(', ')} WHERE id = ?`).run(...values);
