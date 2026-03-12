@@ -1,7 +1,8 @@
 import { Router, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
-import { getDb } from '../models/database.js';
+import { ProjectRepository } from '../repositories/ProjectRepository.js';
+import { UserRepository } from '../repositories/UserRepository.js';
 import { authenticateToken, AuthRequest } from '../middleware/auth.js';
 import { logActivity } from '../utils/activity.js';
 
@@ -14,33 +15,20 @@ const createProjectSchema = z.object({
 });
 
 projectRouter.get('/', (req: AuthRequest, res: Response) => {
-  const db = getDb();
-  const projects = db.prepare(`
-    SELECT p.*, pm.role
-    FROM projects p
-    JOIN project_members pm ON p.id = pm.project_id
-    WHERE pm.user_id = ?
-    ORDER BY p.updated_at DESC
-  `).all(req.userId);
-
+  const projectRepo = new ProjectRepository();
+  const projects = projectRepo.listByUser(req.userId!);
   res.json({ projects });
 });
 
 projectRouter.post('/', (req: AuthRequest, res: Response) => {
   try {
     const { name, description } = createProjectSchema.parse(req.body);
-    const db = getDb();
+    const projectRepo = new ProjectRepository();
     const id = uuidv4();
 
-    db.prepare('INSERT INTO projects (id, name, description, owner_id) VALUES (?, ?, ?, ?)')
-      .run(id, name, description || null, req.userId);
-
-    db.prepare('INSERT INTO project_members (project_id, user_id, role) VALUES (?, ?, ?)')
-      .run(id, req.userId, 'owner');
-
+    const project = projectRepo.create(id, name, description || null, req.userId!);
     logActivity(id, null, req.userId!, 'project_created', `Created project "${name}"`);
 
-    const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(id);
     res.status(201).json({ project });
   } catch (err) {
     if (err instanceof z.ZodError) {
@@ -52,60 +40,43 @@ projectRouter.post('/', (req: AuthRequest, res: Response) => {
 });
 
 projectRouter.get('/:id', (req: AuthRequest, res: Response) => {
-  const db = getDb();
-  const project = db.prepare(`
-    SELECT p.* FROM projects p
-    JOIN project_members pm ON p.id = pm.project_id
-    WHERE p.id = ? AND pm.user_id = ?
-  `).get(req.params.id, req.userId) as any;
+  const projectRepo = new ProjectRepository();
+  const project = projectRepo.findByIdForUser(req.params.id, req.userId!);
 
   if (!project) {
     res.status(404).json({ error: 'Project not found' });
     return;
   }
 
-  const members = db.prepare(`
-    SELECT u.id, u.name, u.email, pm.role
-    FROM project_members pm
-    JOIN users u ON pm.user_id = u.id
-    WHERE pm.project_id = ?
-  `).all(req.params.id);
-
+  const members = projectRepo.getMembers(req.params.id);
   res.json({ project: { ...project, members } });
 });
 
 projectRouter.put('/:id', (req: AuthRequest, res: Response) => {
-  const db = getDb();
   const { name, description } = req.body;
+  const userRepo = new UserRepository();
+  const projectRepo = new ProjectRepository();
 
-  const member = db.prepare(
-    'SELECT role FROM project_members WHERE project_id = ? AND user_id = ?'
-  ).get(req.params.id, req.userId) as any;
-
+  const member = userRepo.getMemberRole(req.params.id, req.userId!);
   if (!member || member.role !== 'owner') {
     res.status(403).json({ error: 'Only project owner can update' });
     return;
   }
 
-  db.prepare('UPDATE projects SET name = ?, description = ?, updated_at = datetime("now") WHERE id = ?')
-    .run(name, description, req.params.id);
-
-  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
+  const project = projectRepo.update(req.params.id, name, description);
   res.json({ project });
 });
 
 projectRouter.delete('/:id', (req: AuthRequest, res: Response) => {
-  const db = getDb();
+  const userRepo = new UserRepository();
+  const projectRepo = new ProjectRepository();
 
-  const member = db.prepare(
-    'SELECT role FROM project_members WHERE project_id = ? AND user_id = ?'
-  ).get(req.params.id, req.userId) as any;
-
+  const member = userRepo.getMemberRole(req.params.id, req.userId!);
   if (!member || member.role !== 'owner') {
     res.status(403).json({ error: 'Only project owner can delete' });
     return;
   }
 
-  db.prepare('DELETE FROM projects WHERE id = ?').run(req.params.id);
+  projectRepo.delete(req.params.id);
   res.status(204).send();
 });

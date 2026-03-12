@@ -1,7 +1,8 @@
 import { Router, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
-import { getDb } from '../models/database.js';
+import { TaskRepository } from '../repositories/TaskRepository.js';
+import { UserRepository } from '../repositories/UserRepository.js';
 import { authenticateToken, AuthRequest } from '../middleware/auth.js';
 import { logActivity } from '../utils/activity.js';
 
@@ -27,61 +28,37 @@ const updateTaskSchema = z.object({
 });
 
 taskRouter.get('/project/:projectId', (req: AuthRequest, res: Response) => {
-  const db = getDb();
+  const userRepo = new UserRepository();
+  const taskRepo = new TaskRepository();
 
-  // Verify membership
-  const member = db.prepare(
-    'SELECT 1 FROM project_members WHERE project_id = ? AND user_id = ?'
-  ).get(req.params.projectId, req.userId);
-
-  if (!member) {
+  if (!userRepo.isMemberOf(req.params.projectId, req.userId!)) {
     res.status(403).json({ error: 'Not a member of this project' });
     return;
   }
 
-  // BUG B1: When fetching tasks, assignee_id is selected but not joined with
-  // user data, and on the frontend the assignee dropdown resets because
-  // the response doesn't include the assignee name. Additionally, when
-  // switching projects, the task list briefly shows tasks from the previous
-  // project because the query doesn't properly filter by the new project_id
-  // when there's a race condition in the request.
-  const tasks = db.prepare(`
-    SELECT t.*, u.name as assignee_name
-    FROM tasks t
-    LEFT JOIN users u ON t.assignee_id = u.id
-    WHERE t.project_id = ?
-    ORDER BY t.created_at DESC
-  `).all(req.params.projectId);
-
+  const tasks = taskRepo.listByProject(req.params.projectId);
   res.json({ tasks });
 });
 
 taskRouter.post('/', (req: AuthRequest, res: Response) => {
   try {
     const data = createTaskSchema.parse(req.body);
-    const db = getDb();
+    const userRepo = new UserRepository();
+    const taskRepo = new TaskRepository();
 
-    // Verify membership
-    const member = db.prepare(
-      'SELECT 1 FROM project_members WHERE project_id = ? AND user_id = ?'
-    ).get(data.project_id, req.userId);
-
-    if (!member) {
+    if (!userRepo.isMemberOf(data.project_id, req.userId!)) {
       res.status(403).json({ error: 'Not a member of this project' });
       return;
     }
 
     const id = uuidv4();
-
-    db.prepare(`
-      INSERT INTO tasks (id, project_id, title, description, priority, assignee_id, due_date, created_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, data.project_id, data.title, data.description || null,
-      data.priority || 'medium', data.assignee_id || null, data.due_date || null, req.userId);
+    const task = taskRepo.create(
+      id, data.project_id, data.title,
+      data.description || null, data.priority || 'medium',
+      data.assignee_id || null, data.due_date || null, req.userId!
+    );
 
     logActivity(data.project_id, id, req.userId!, 'task_created', `Created task "${data.title}"`);
-
-    const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id);
     res.status(201).json({ task });
   } catch (err) {
     if (err instanceof z.ZodError) {
@@ -95,20 +72,16 @@ taskRouter.post('/', (req: AuthRequest, res: Response) => {
 taskRouter.put('/:id', (req: AuthRequest, res: Response) => {
   try {
     const updates = updateTaskSchema.parse(req.body);
-    const db = getDb();
+    const userRepo = new UserRepository();
+    const taskRepo = new TaskRepository();
 
-    const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id) as any;
+    const task = taskRepo.findById(req.params.id);
     if (!task) {
       res.status(404).json({ error: 'Task not found' });
       return;
     }
 
-    // Verify membership
-    const member = db.prepare(
-      'SELECT 1 FROM project_members WHERE project_id = ? AND user_id = ?'
-    ).get(task.project_id, req.userId);
-
-    if (!member) {
+    if (!userRepo.isMemberOf(task.project_id, req.userId!)) {
       res.status(403).json({ error: 'Not a member of this project' });
       return;
     }
@@ -132,10 +105,7 @@ taskRouter.put('/:id', (req: AuthRequest, res: Response) => {
       return;
     }
 
-    fields.push('updated_at = datetime("now")');
-    values.push(req.params.id);
-
-    db.prepare(`UPDATE tasks SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+    const updatedTask = taskRepo.update(req.params.id, updates);
 
     // BUG B4: Activity logging happens for every field update individually
     // when batch updates come in rapid succession. The frontend sends
@@ -145,7 +115,6 @@ taskRouter.put('/:id', (req: AuthRequest, res: Response) => {
     logActivity(task.project_id, req.params.id, req.userId!, 'task_updated',
       `Updated ${changes} on "${task.title}"`);
 
-    const updatedTask = db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id);
     res.json({ task: updatedTask });
   } catch (err) {
     if (err instanceof z.ZodError) {
@@ -158,17 +127,15 @@ taskRouter.put('/:id', (req: AuthRequest, res: Response) => {
 
 // Soft delete
 taskRouter.delete('/:id', (req: AuthRequest, res: Response) => {
-  const db = getDb();
+  const taskRepo = new TaskRepository();
 
-  const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id) as any;
+  const task = taskRepo.findById(req.params.id);
   if (!task) {
     res.status(404).json({ error: 'Task not found' });
     return;
   }
 
-  // Soft delete — sets deleted_at but doesn't remove the row
-  db.prepare("UPDATE tasks SET deleted_at = datetime('now') WHERE id = ?")
-    .run(req.params.id);
+  taskRepo.softDelete(req.params.id);
 
   logActivity(task.project_id, req.params.id, req.userId!, 'task_deleted',
     `Deleted task "${task.title}"`);
