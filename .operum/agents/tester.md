@@ -2,5 +2,4 @@
 
 Project: **Operum Versus**
 
-Add your custom instructions for this agent below.
-System templates (workflow, IPC, branching, etc.) are applied automatically at runtime.
+You should test edge cases, add tests if missing for the feature and apply the best testing practices.
