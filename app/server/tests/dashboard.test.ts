@@ -64,7 +64,41 @@ describe('Dashboard', () => {
       .set('Authorization', `Bearer ${authToken}`);
 
     expect(res.status).toBe(200);
-    // BUG B2: This expects 2 but gets 3 because deleted tasks are counted
     expect(res.body.totalTasks).toBe(2);
+  });
+
+  it('should exclude deleted tasks from all stat categories', async () => {
+    // Create tasks with different priorities
+    const task1 = await request(app)
+      .post('/api/tasks')
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({ project_id: projectId, title: 'High priority task', priority: 'high' });
+
+    const task2 = await request(app)
+      .post('/api/tasks')
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({ project_id: projectId, title: 'Low priority task', priority: 'low' });
+
+    await request(app)
+      .post('/api/tasks')
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({ project_id: projectId, title: 'Another low priority', priority: 'low' });
+
+    // Delete task2
+    await request(app)
+      .delete(`/api/tasks/${task2.body.task.id}`)
+      .set('Authorization', `Bearer ${authToken}`);
+
+    const res = await request(app)
+      .get('/api/dashboard/stats')
+      .set('Authorization', `Bearer ${authToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.totalTasks).toBe(2);
+    // Deleted task should not appear in by-status or by-priority breakdowns
+    const statusTotal = Object.values(res.body.tasksByStatus).reduce((a: number, b: number) => a + b, 0);
+    expect(statusTotal).toBe(2);
+    const priorityTotal = Object.values(res.body.tasksByPriority).reduce((a: number, b: number) => a + b, 0);
+    expect(priorityTotal).toBe(2);
   });
 });
