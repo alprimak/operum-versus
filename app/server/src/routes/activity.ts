@@ -21,9 +21,6 @@ activityRouter.get('/project/:projectId', (req: AuthRequest, res: Response) => {
   const limit = parseInt(req.query.limit as string) || 50;
   const offset = parseInt(req.query.offset as string) || 0;
 
-  // BUG B4: No deduplication — rapid consecutive updates to the same task
-  // generate multiple activity entries with timestamps within the same second.
-  // The frontend shows all of them, creating a cluttered activity feed.
   const activities = db.prepare(`
     SELECT al.*, u.name as user_name
     FROM activity_log al

@@ -132,7 +132,7 @@ taskRouter.put('/:id', (req: AuthRequest, res: Response) => {
       return;
     }
 
-    fields.push('updated_at = datetime("now")');
+    fields.push("updated_at = datetime('now')");
     values.push(req.params.id);
 
     db.prepare(`UPDATE tasks SET ${fields.join(', ')} WHERE id = ?`).run(...values);
