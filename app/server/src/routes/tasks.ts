@@ -26,6 +26,78 @@ const updateTaskSchema = z.object({
   due_date: z.string().nullable().optional(),
 });
 
+// Search tasks across user's projects with optional filters
+taskRouter.get('/search', (req: AuthRequest, res: Response) => {
+  const db = getDb();
+
+  const query = (req.query.q as string) || '';
+  const status = req.query.status as string | undefined;
+  const priority = req.query.priority as string | undefined;
+  const assignee = req.query.assignee as string | undefined;
+  const projectId = req.query.project_id as string | undefined;
+
+  // Get all projects the user is a member of
+  let projectIds: string[];
+  if (projectId) {
+    const member = db.prepare(
+      'SELECT 1 FROM project_members WHERE project_id = ? AND user_id = ?'
+    ).get(projectId, req.userId);
+    if (!member) {
+      res.status(403).json({ error: 'Not a member of this project' });
+      return;
+    }
+    projectIds = [projectId];
+  } else {
+    const rows = db.prepare(
+      'SELECT project_id FROM project_members WHERE user_id = ?'
+    ).all(req.userId) as any[];
+    projectIds = rows.map((r: any) => r.project_id);
+  }
+
+  if (projectIds.length === 0) {
+    res.json({ tasks: [] });
+    return;
+  }
+
+  const placeholders = projectIds.map(() => '?').join(',');
+  const conditions: string[] = [
+    `t.project_id IN (${placeholders})`,
+    't.deleted_at IS NULL',
+  ];
+  const params: any[] = [...projectIds];
+
+  if (query) {
+    conditions.push('(t.title LIKE ? OR t.description LIKE ?)');
+    params.push(`%${query}%`, `%${query}%`);
+  }
+
+  if (status) {
+    conditions.push('t.status = ?');
+    params.push(status);
+  }
+
+  if (priority) {
+    conditions.push('t.priority = ?');
+    params.push(priority);
+  }
+
+  if (assignee) {
+    conditions.push('t.assignee_id = ?');
+    params.push(assignee);
+  }
+
+  const tasks = db.prepare(`
+    SELECT t.*, u.name as assignee_name, p.name as project_name
+    FROM tasks t
+    LEFT JOIN users u ON t.assignee_id = u.id
+    JOIN projects p ON t.project_id = p.id
+    WHERE ${conditions.join(' AND ')}
+    ORDER BY t.updated_at DESC
+  `).all(...params);
+
+  res.json({ tasks });
+});
+
 taskRouter.get('/project/:projectId', (req: AuthRequest, res: Response) => {
   const db = getDb();
 

@@ -101,6 +101,13 @@ export const projects = {
 export const tasks = {
   listByProject: (projectId: string) =>
     apiRequest<{ tasks: any[] }>(`/tasks/project/${projectId}`),
+  search: (filters: { q?: string; status?: string; priority?: string; assignee?: string; project_id?: string }) => {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(filters)) {
+      if (value) params.set(key, value);
+    }
+    return apiRequest<{ tasks: any[] }>(`/tasks/search?${params.toString()}`);
+  },
   create: (data: any) =>
     apiRequest('/tasks', { method: 'POST', body: JSON.stringify(data) }),
   update: (id: string, data: any) =>
