@@ -87,7 +87,7 @@ projectRouter.put('/:id', (req: AuthRequest, res: Response) => {
     return;
   }
 
-  db.prepare('UPDATE projects SET name = ?, description = ?, updated_at = datetime("now") WHERE id = ?')
+  db.prepare("UPDATE projects SET name = ?, description = ?, updated_at = datetime('now') WHERE id = ?")
     .run(name, description, req.params.id);
 
   const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
