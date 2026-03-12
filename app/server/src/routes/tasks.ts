@@ -8,10 +8,68 @@ import { logActivity } from '../utils/activity.js';
 export const taskRouter = Router();
 taskRouter.use(authenticateToken);
 
+taskRouter.get('/search', (req: AuthRequest, res: Response) => {
+  const db = getDb();
+
+  const { query, status, priority, assignee_id, project_id } = req.query as Record<string, string>;
+
+  // Must specify a project_id to search within
+  if (!project_id) {
+    res.status(400).json({ error: 'project_id is required' });
+    return;
+  }
+
+  // Verify membership
+  const member = db.prepare(
+    'SELECT 1 FROM project_members WHERE project_id = ? AND user_id = ?'
+  ).get(project_id, req.userId);
+
+  if (!member) {
+    res.status(403).json({ error: 'Not a member of this project' });
+    return;
+  }
+
+  const conditions: string[] = ['t.project_id = ?', 't.deleted_at IS NULL'];
+  const params: any[] = [project_id];
+
+  if (query) {
+    conditions.push('(t.title LIKE ? OR t.description LIKE ?)');
+    const likeQuery = `%${query}%`;
+    params.push(likeQuery, likeQuery);
+  }
+
+  if (status) {
+    conditions.push('t.status = ?');
+    params.push(status);
+  }
+
+  if (priority) {
+    conditions.push('t.priority = ?');
+    params.push(priority);
+  }
+
+  if (assignee_id) {
+    conditions.push('t.assignee_id = ?');
+    params.push(assignee_id);
+  }
+
+  const sql = `
+    SELECT t.*, u.name as assignee_name
+    FROM tasks t
+    LEFT JOIN users u ON t.assignee_id = u.id
+    WHERE ${conditions.join(' AND ')}
+    ORDER BY t.created_at DESC
+  `;
+
+  const tasks = db.prepare(sql).all(...params);
+  res.json({ tasks });
+});
+
 const createTaskSchema = z.object({
   project_id: z.string().uuid(),
   title: z.string().min(1).max(200),
   description: z.string().optional(),
+  status: z.enum(['todo', 'in_progress', 'review', 'done']).optional(),
   priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
   assignee_id: z.string().uuid().optional(),
   due_date: z.string().optional(),
@@ -74,10 +132,10 @@ taskRouter.post('/', (req: AuthRequest, res: Response) => {
     const id = uuidv4();
 
     db.prepare(`
-      INSERT INTO tasks (id, project_id, title, description, priority, assignee_id, due_date, created_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO tasks (id, project_id, title, description, status, priority, assignee_id, due_date, created_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(id, data.project_id, data.title, data.description || null,
-      data.priority || 'medium', data.assignee_id || null, data.due_date || null, req.userId);
+      data.status || 'todo', data.priority || 'medium', data.assignee_id || null, data.due_date || null, req.userId);
 
     logActivity(data.project_id, id, req.userId!, 'task_created', `Created task "${data.title}"`);
 
