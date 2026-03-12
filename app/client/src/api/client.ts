@@ -103,8 +103,13 @@ export const tasks = {
     apiRequest<{ tasks: any[] }>(`/tasks/project/${projectId}`),
   create: (data: any) =>
     apiRequest('/tasks', { method: 'POST', body: JSON.stringify(data) }),
-  update: (id: string, data: any) =>
-    apiRequest(`/tasks/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  update: (id: string, data: any) => {
+    // Strip project_id from update payload — the server uses the task's
+    // stored project_id, not a client-supplied one, to avoid stale
+    // project context after rapid project switches.
+    const { project_id, ...updateData } = data;
+    return apiRequest(`/tasks/${id}`, { method: 'PUT', body: JSON.stringify(updateData) });
+  },
   delete: (id: string) =>
     apiRequest(`/tasks/${id}`, { method: 'DELETE' }),
 };
