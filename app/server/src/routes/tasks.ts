@@ -72,12 +72,14 @@ taskRouter.post('/', (req: AuthRequest, res: Response) => {
     }
 
     const id = uuidv4();
+    // Normalize due_date to YYYY-MM-DD to avoid timezone offset issues
+    const normalizedDueDate = data.due_date ? data.due_date.split('T')[0] : null;
 
     db.prepare(`
       INSERT INTO tasks (id, project_id, title, description, priority, assignee_id, due_date, created_by)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).run(id, data.project_id, data.title, data.description || null,
-      data.priority || 'medium', data.assignee_id || null, data.due_date || null, req.userId);
+      data.priority || 'medium', data.assignee_id || null, normalizedDueDate, req.userId);
 
     logActivity(data.project_id, id, req.userId!, 'task_created', `Created task "${data.title}"`);
 
@@ -117,6 +119,11 @@ taskRouter.put('/:id', (req: AuthRequest, res: Response) => {
     // is a member of the project. Also, when updating from the frontend
     // after switching projects, the task.project_id here is from the OLD
     // project because the frontend sends stale data.
+    // Normalize due_date to YYYY-MM-DD to avoid timezone offset issues
+    if (updates.due_date) {
+      updates.due_date = updates.due_date.split('T')[0];
+    }
+
     const fields: string[] = [];
     const values: any[] = [];
 
@@ -132,7 +139,7 @@ taskRouter.put('/:id', (req: AuthRequest, res: Response) => {
       return;
     }
 
-    fields.push('updated_at = datetime("now")');
+    fields.push("updated_at = datetime('now')");
     values.push(req.params.id);
 
     db.prepare(`UPDATE tasks SET ${fields.join(', ')} WHERE id = ?`).run(...values);
