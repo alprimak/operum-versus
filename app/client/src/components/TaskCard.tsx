@@ -28,15 +28,22 @@ const priorityColors: Record<string, string> = {
   urgent: 'bg-red-50 text-red-600',
 };
 
-// BUG B5: Due date display uses new Date() which applies timezone offset
+// Parse date string as local date to avoid timezone offset shifting
 function formatDueDate(dateStr: string): string {
-  const date = new Date(dateStr);
+  // Take only the date part (YYYY-MM-DD) and display in local timezone
+  const datePart = dateStr.split('T')[0];
+  const [year, month, day] = datePart.split('-').map(Number);
+  const date = new Date(year, month - 1, day); // local date, no timezone shift
   return date.toLocaleDateString();
 }
 
 function isDueDateOverdue(dateStr: string): boolean {
-  const date = new Date(dateStr);
-  return date < new Date() ;
+  const datePart = dateStr.split('T')[0];
+  const [year, month, day] = datePart.split('-').map(Number);
+  const date = new Date(year, month - 1, day);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return date < today;
 }
 
 export function TaskCard({ task, onStatusChange, onAssigneeChange }: TaskCardProps) {

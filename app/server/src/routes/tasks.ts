@@ -73,11 +73,16 @@ taskRouter.post('/', (req: AuthRequest, res: Response) => {
 
     const id = uuidv4();
 
+    // Normalize due_date to date-only string (YYYY-MM-DD) to avoid timezone issues
+    const normalizedDueDate = data.due_date
+      ? data.due_date.split('T')[0]
+      : null;
+
     db.prepare(`
       INSERT INTO tasks (id, project_id, title, description, priority, assignee_id, due_date, created_by)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).run(id, data.project_id, data.title, data.description || null,
-      data.priority || 'medium', data.assignee_id || null, data.due_date || null, req.userId);
+      data.priority || 'medium', data.assignee_id || null, normalizedDueDate, req.userId);
 
     logActivity(data.project_id, id, req.userId!, 'task_created', `Created task "${data.title}"`);
 
@@ -122,8 +127,13 @@ taskRouter.put('/:id', (req: AuthRequest, res: Response) => {
 
     for (const [key, value] of Object.entries(updates)) {
       if (value !== undefined) {
-        fields.push(`${key} = ?`);
-        values.push(value);
+        if (key === 'due_date' && value) {
+          fields.push(`${key} = ?`);
+          values.push((value as string).split('T')[0]);
+        } else {
+          fields.push(`${key} = ?`);
+          values.push(value);
+        }
       }
     }
 
