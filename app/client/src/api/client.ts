@@ -95,6 +95,20 @@ export const projects = {
     apiRequest(`/projects/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (id: string) =>
     apiRequest(`/projects/${id}`, { method: 'DELETE' }),
+  exportCsv: async (id: string) => {
+    const token = localStorage.getItem('accessToken');
+    const res = await fetch(`${API_URL}/projects/${id}/export/csv`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error('Export failed');
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `project-${id}-tasks.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  },
 };
 
 // Tasks

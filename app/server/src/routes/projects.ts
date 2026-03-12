@@ -94,6 +94,57 @@ projectRouter.put('/:id', (req: AuthRequest, res: Response) => {
   res.json({ project });
 });
 
+// CSV Export
+projectRouter.get('/:id/export/csv', (req: AuthRequest, res: Response) => {
+  const db = getDb();
+
+  const member = db.prepare(
+    'SELECT 1 FROM project_members WHERE project_id = ? AND user_id = ?'
+  ).get(req.params.id, req.userId);
+
+  if (!member) {
+    res.status(403).json({ error: 'Not a member of this project' });
+    return;
+  }
+
+  const project = db.prepare('SELECT name FROM projects WHERE id = ?').get(req.params.id) as any;
+  if (!project) {
+    res.status(404).json({ error: 'Project not found' });
+    return;
+  }
+
+  const tasks = db.prepare(`
+    SELECT t.title, t.description, t.status, t.priority,
+           u.name as assignee_name, t.due_date, t.created_at, t.updated_at
+    FROM tasks t
+    LEFT JOIN users u ON t.assignee_id = u.id
+    WHERE t.project_id = ? AND t.deleted_at IS NULL
+    ORDER BY t.created_at ASC
+  `).all(req.params.id) as any[];
+
+  const headers = ['Title', 'Description', 'Status', 'Priority', 'Assignee', 'Due Date', 'Created', 'Updated'];
+
+  function escapeCsvField(value: string | null): string {
+    if (value === null || value === undefined) return '';
+    const str = String(value);
+    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+      return `"${str.replace(/"/g, '""')}"`;
+    }
+    return str;
+  }
+
+  const rows = tasks.map((t: any) => [
+    t.title, t.description, t.status, t.priority,
+    t.assignee_name, t.due_date, t.created_at, t.updated_at,
+  ].map(escapeCsvField).join(','));
+
+  const csv = [headers.join(','), ...rows].join('\n');
+
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', `attachment; filename="${project.name}-tasks.csv"`);
+  res.send(csv);
+});
+
 projectRouter.delete('/:id', (req: AuthRequest, res: Response) => {
   const db = getDb();
 
