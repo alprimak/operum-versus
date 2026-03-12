@@ -113,10 +113,18 @@ taskRouter.put('/:id', (req: AuthRequest, res: Response) => {
       return;
     }
 
-    // BUG B1: The assignee_id update doesn't validate that the assignee
-    // is a member of the project. Also, when updating from the frontend
-    // after switching projects, the task.project_id here is from the OLD
-    // project because the frontend sends stale data.
+    // Validate assignee is a member of the task's project
+    if (updates.assignee_id) {
+      const assigneeMember = db.prepare(
+        'SELECT 1 FROM project_members WHERE project_id = ? AND user_id = ?'
+      ).get(task.project_id, updates.assignee_id);
+
+      if (!assigneeMember) {
+        res.status(400).json({ error: 'Assignee is not a member of this project' });
+        return;
+      }
+    }
+
     const fields: string[] = [];
     const values: any[] = [];
 
@@ -132,7 +140,7 @@ taskRouter.put('/:id', (req: AuthRequest, res: Response) => {
       return;
     }
 
-    fields.push('updated_at = datetime("now")');
+    fields.push("updated_at = datetime('now')");
     values.push(req.params.id);
 
     db.prepare(`UPDATE tasks SET ${fields.join(', ')} WHERE id = ?`).run(...values);
