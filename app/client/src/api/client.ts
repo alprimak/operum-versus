@@ -95,6 +95,21 @@ export const projects = {
     apiRequest(`/projects/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (id: string) =>
     apiRequest(`/projects/${id}`, { method: 'DELETE' }),
+  exportCsv: (id: string) => {
+    const url = `${API_URL}/projects/${id}/export/csv`;
+    const headers: Record<string, string> = {};
+    if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
+    return fetch(url, { headers }).then(res => {
+      if (!res.ok) throw new Error('Export failed');
+      return res.blob();
+    }).then(blob => {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'project-tasks.csv';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    });
+  },
 };
 
 // Tasks
