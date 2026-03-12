@@ -54,8 +54,6 @@ describe('Authentication', () => {
     expect(res.body.accessToken).toBeDefined();
   });
 
-  // BUG B3: This test SHOULD fail — refresh tokens should be single-use
-  // but currently they can be reused indefinitely
   it('should invalidate refresh token after use', async () => {
     const registerRes = await request(app)
       .post('/api/auth/register')
@@ -69,10 +67,47 @@ describe('Authentication', () => {
       .send({ refreshToken });
     expect(first.status).toBe(200);
 
-    // Second refresh with same token should FAIL (but currently passes — BUG)
+    // Second refresh with same token should FAIL (single-use enforcement)
     const second = await request(app)
       .post('/api/auth/refresh')
       .send({ refreshToken });
     expect(second.status).toBe(403);
+  });
+
+  it('should handle concurrent refresh attempts gracefully', async () => {
+    const registerRes = await request(app)
+      .post('/api/auth/register')
+      .send({ email: 'test@test.com', password: 'password123', name: 'Test User' });
+
+    const refreshToken = registerRes.body.refreshToken;
+
+    // Fire two concurrent refresh requests with the same token
+    const [first, second] = await Promise.all([
+      request(app).post('/api/auth/refresh').send({ refreshToken }),
+      request(app).post('/api/auth/refresh').send({ refreshToken }),
+    ]);
+
+    // Exactly one should succeed, the other should fail
+    const statuses = [first.status, second.status].sort();
+    expect(statuses).toEqual([200, 403]);
+  });
+
+  it('should allow chained refreshes with new tokens', async () => {
+    const registerRes = await request(app)
+      .post('/api/auth/register')
+      .send({ email: 'test@test.com', password: 'password123', name: 'Test User' });
+
+    // First refresh
+    const first = await request(app)
+      .post('/api/auth/refresh')
+      .send({ refreshToken: registerRes.body.refreshToken });
+    expect(first.status).toBe(200);
+    expect(first.body.refreshToken).toBeDefined();
+
+    // Second refresh with the NEW token should succeed
+    const second = await request(app)
+      .post('/api/auth/refresh')
+      .send({ refreshToken: first.body.refreshToken });
+    expect(second.status).toBe(200);
   });
 });

@@ -74,7 +74,6 @@ authRouter.post('/login', async (req: Request, res: Response) => {
   }
 });
 
-// BUG B3: No token invalidation — refresh tokens can be reused
 authRouter.post('/refresh', (req: Request, res: Response) => {
   const { refreshToken } = req.body;
   if (!refreshToken) {
