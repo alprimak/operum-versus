@@ -49,7 +49,7 @@ taskRouter.get('/project/:projectId', (req: AuthRequest, res: Response) => {
     SELECT t.*, u.name as assignee_name
     FROM tasks t
     LEFT JOIN users u ON t.assignee_id = u.id
-    WHERE t.project_id = ?
+    WHERE t.project_id = ? AND t.deleted_at IS NULL
     ORDER BY t.created_at DESC
   `).all(req.params.projectId);
 
@@ -113,6 +113,18 @@ taskRouter.put('/:id', (req: AuthRequest, res: Response) => {
       return;
     }
 
+    // Validate assignee is a member of the project
+    if (updates.assignee_id !== undefined && updates.assignee_id !== null) {
+      const assigneeMember = db.prepare(
+        'SELECT 1 FROM project_members WHERE project_id = ? AND user_id = ?'
+      ).get(task.project_id, updates.assignee_id);
+
+      if (!assigneeMember) {
+        res.status(400).json({ error: 'Assignee must be a member of the project' });
+        return;
+      }
+    }
+
     // BUG B1: The assignee_id update doesn't validate that the assignee
     // is a member of the project. Also, when updating from the frontend
     // after switching projects, the task.project_id here is from the OLD
@@ -132,7 +144,7 @@ taskRouter.put('/:id', (req: AuthRequest, res: Response) => {
       return;
     }
 
-    fields.push('updated_at = datetime("now")');
+    fields.push("updated_at = datetime('now')");
     values.push(req.params.id);
 
     db.prepare(`UPDATE tasks SET ${fields.join(', ')} WHERE id = ?`).run(...values);
