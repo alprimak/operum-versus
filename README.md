@@ -149,10 +149,12 @@ Using a different model family (OpenAI) than the contestant (Claude) ensures eva
 
 | Date | System | Avg Score | Failures | Notes |
 |------|--------|-----------|----------|-------|
-| 2026-03-23 | Cursor (GPT-5.3 Codex) | **8.3/10** | 0/10 | 1 QA revision on R1 |
-| 2026-03-12 | Claude Code (Operum) | **7.47/10** | 2/10 | R1 reintroduced bugs; R2 incomplete |
+| 2026-03-23 | Operum (Cursor GPT-5.3 Codex) | **8.3/10** | 0/10 | 1 QA revision on R1 |
+| 2026-03-23 | Operum (Claude Code Opus 4.6) | **8.15/10** | 0/10 | Feature PRs backend-only; no frontend UI |
 
-### Cursor (GPT-5.3 Codex) — 2026-03-23
+---
+
+### Operum (Cursor GPT-5.3 Codex) — 2026-03-23
 
 | Challenge | PR | Score | Verdict |
 |-----------|----|-------|---------|
@@ -173,24 +175,26 @@ Using a different model family (OpenAI) than the contestant (Claude) ensures eva
 
 ---
 
-### Claude Code — 2026-03-12
+### Operum (Claude Code Opus 4.6) — 2026-03-23
 
 | Challenge | PR | Score | Verdict |
 |-----------|----|-------|---------|
-| B2: Dashboard stats | #41 | 9.4/10 | PASS |
-| B5: Timezone date fix | #45 | 9.0/10 | PASS |
-| F3: CSV export | #46 | 9.0/10 | PASS |
-| F2: Task search with filters | #47 | 9.0/10 | PASS |
-| B3: Token refresh race | #43 | 8.8/10 | PASS |
-| F1: Comments + @mentions | #48 | 8.2/10 | PASS_WITH_NOTES |
-| B1: Assignee persistence | #42 | 8.0/10 | PASS_WITH_NOTES |
-| B4: Activity dedup | #44 | 7.8/10 | PASS_WITH_NOTES |
-| R1: Repository pattern | #49 | 5.8/10 | FAIL |
-| R2: Auth context | #50 | 5.0/10 | FAIL |
+| R1: Repository pattern | #70 | 9.3/10 | PASS |
+| B2: Dashboard stats | #62 | 8.8/10 | PASS |
+| B3: Token refresh race | #64 | 8.7/10 | PASS |
+| F3: CSV export | #69 | 8.1/10 | PASS |
+| R2: Auth context | #71 | 8.1/10 | PASS |
+| F2: Task search with filters | #68 | 7.9/10 | PASS |
+| B4: Activity dedup | #65 | 7.8/10 | PASS |
+| F1: Comments + @mentions | #67 | 7.7/10 | PASS |
+| B5: Timezone date fix | #66 | 7.6/10 | PASS |
+| B1: Assignee persistence | #63 | 7.5/10 | PASS |
 
-**Strengths:** Top bug fixes and feature implementations were excellent. B2 fix was textbook.
+**Strengths:** Best R1 score in benchmark (9.3) — repository pattern was textbook with zero direct SQL in routes and full test coverage maintained. Zero outright failures across all 10 challenges.
 
-**Weaknesses:** Both refactor PRs failed — R1 reintroduced the B2 deleted-task bug; R2 only created the context file without wiring it into the app.
+**Weaknesses:** Feature PRs (F1, F2, F3) were backend-complete but shipped no frontend UI components. B1 fix addressed server-side validation but missed the frontend race condition aspect.
+
+---
 
 ## Fairness Rules
 
