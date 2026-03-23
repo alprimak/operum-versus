@@ -40,6 +40,22 @@ describe('Tasks', () => {
       .run(sourceProjectId, assigneeId, 'member');
   });
 
+  async function createTask(
+    token: string,
+    data: {
+      project_id: string;
+      title: string;
+      description?: string;
+      priority?: 'low' | 'medium' | 'high' | 'urgent';
+      assignee_id?: string;
+    }
+  ) {
+    return request(app)
+      .post('/api/tasks')
+      .set('Authorization', `Bearer ${token}`)
+      .send(data);
+  }
+
   it('returns 400 when assignee is not a member of the target project', async () => {
     const createTaskRes = await request(app)
       .post('/api/tasks')
@@ -119,5 +135,182 @@ describe('Tasks', () => {
 
     expect(updateRes.status).toBe(200);
     expect(updateRes.body.task.due_date).toBe('2024-06-30T00:00:00.000Z');
+  });
+
+  it('searches tasks by text query and includes project context', async () => {
+    await createTask(ownerToken, {
+      project_id: sourceProjectId,
+      title: 'Fix API pagination',
+      description: 'Need to fix token handling for next page',
+    });
+    await createTask(ownerToken, {
+      project_id: targetProjectId,
+      title: 'Design homepage',
+      description: 'Landing page draft',
+    });
+
+    const searchRes = await request(app)
+      .get('/api/tasks/search')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .query({ query: 'pagination' });
+
+    expect(searchRes.status).toBe(200);
+    expect(searchRes.body.tasks).toHaveLength(1);
+    expect(searchRes.body.tasks[0].title).toBe('Fix API pagination');
+    expect(searchRes.body.tasks[0].project_name).toBe('Source Project');
+  });
+
+  it('filters search results by status', async () => {
+    const todoTask = await createTask(ownerToken, {
+      project_id: sourceProjectId,
+      title: 'Todo item',
+    });
+    const reviewTask = await createTask(ownerToken, {
+      project_id: sourceProjectId,
+      title: 'Review item',
+    });
+
+    await request(app)
+      .put(`/api/tasks/${reviewTask.body.task.id}`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ status: 'review' });
+
+    const searchRes = await request(app)
+      .get('/api/tasks/search')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .query({ status: 'review', project_id: sourceProjectId });
+
+    expect(todoTask.status).toBe(201);
+    expect(searchRes.status).toBe(200);
+    expect(searchRes.body.tasks).toHaveLength(1);
+    expect(searchRes.body.tasks[0].title).toBe('Review item');
+  });
+
+  it('filters search results by priority', async () => {
+    await createTask(ownerToken, {
+      project_id: sourceProjectId,
+      title: 'Low priority item',
+      priority: 'low',
+    });
+    await createTask(ownerToken, {
+      project_id: sourceProjectId,
+      title: 'Urgent item',
+      priority: 'urgent',
+    });
+
+    const searchRes = await request(app)
+      .get('/api/tasks/search')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .query({ priority: 'urgent', project_id: sourceProjectId });
+
+    expect(searchRes.status).toBe(200);
+    expect(searchRes.body.tasks).toHaveLength(1);
+    expect(searchRes.body.tasks[0].title).toBe('Urgent item');
+  });
+
+  it('filters search results by assignee', async () => {
+    await createTask(ownerToken, {
+      project_id: sourceProjectId,
+      title: 'Assigned task',
+      assignee_id: assigneeId,
+    });
+    await createTask(ownerToken, {
+      project_id: sourceProjectId,
+      title: 'Unassigned task',
+    });
+
+    const searchRes = await request(app)
+      .get('/api/tasks/search')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .query({ assignee: assigneeId, project_id: sourceProjectId });
+
+    expect(searchRes.status).toBe(200);
+    expect(searchRes.body.tasks).toHaveLength(1);
+    expect(searchRes.body.tasks[0].title).toBe('Assigned task');
+  });
+
+  it('combines multiple search filters with AND logic', async () => {
+    const matchingTask = await createTask(ownerToken, {
+      project_id: sourceProjectId,
+      title: 'Auth regression',
+      description: 'Investigate login timeout',
+      priority: 'high',
+      assignee_id: assigneeId,
+    });
+    const nonMatchingTask = await createTask(ownerToken, {
+      project_id: sourceProjectId,
+      title: 'Auth docs',
+      description: 'Update docs for login flow',
+      priority: 'low',
+      assignee_id: assigneeId,
+    });
+
+    await request(app)
+      .put(`/api/tasks/${matchingTask.body.task.id}`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ status: 'in_progress' });
+
+    await request(app)
+      .put(`/api/tasks/${nonMatchingTask.body.task.id}`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ status: 'in_progress' });
+
+    const searchRes = await request(app)
+      .get('/api/tasks/search')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .query({
+        query: 'auth',
+        status: 'in_progress',
+        priority: 'high',
+        assignee: assigneeId,
+        project_id: sourceProjectId,
+      });
+
+    expect(searchRes.status).toBe(200);
+    expect(searchRes.body.tasks).toHaveLength(1);
+    expect(searchRes.body.tasks[0].title).toBe('Auth regression');
+  });
+
+  it('excludes soft-deleted tasks from search results', async () => {
+    const taskRes = await createTask(ownerToken, {
+      project_id: sourceProjectId,
+      title: 'Delete me',
+      description: 'This task should be excluded after deletion',
+    });
+
+    await request(app)
+      .delete(`/api/tasks/${taskRes.body.task.id}`)
+      .set('Authorization', `Bearer ${ownerToken}`);
+
+    const searchRes = await request(app)
+      .get('/api/tasks/search')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .query({ query: 'delete me', project_id: sourceProjectId });
+
+    expect(searchRes.status).toBe(200);
+    expect(searchRes.body.tasks).toHaveLength(0);
+  });
+
+  it('returns non-deleted tasks for empty query', async () => {
+    await createTask(ownerToken, {
+      project_id: sourceProjectId,
+      title: 'Visible task',
+    });
+    const deletedTaskRes = await createTask(ownerToken, {
+      project_id: sourceProjectId,
+      title: 'Hidden task',
+    });
+
+    await request(app)
+      .delete(`/api/tasks/${deletedTaskRes.body.task.id}`)
+      .set('Authorization', `Bearer ${ownerToken}`);
+
+    const searchRes = await request(app)
+      .get('/api/tasks/search')
+      .set('Authorization', `Bearer ${ownerToken}`);
+
+    expect(searchRes.status).toBe(200);
+    expect(searchRes.body.tasks.some((task: any) => task.title === 'Visible task')).toBe(true);
+    expect(searchRes.body.tasks.some((task: any) => task.title === 'Hidden task')).toBe(false);
   });
 });
