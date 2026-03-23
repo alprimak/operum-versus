@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
 import { getDb } from '../models/database.js';
-import { generateTokens, verifyRefreshToken, authenticateToken, AuthRequest } from '../middleware/auth.js';
+import { generateTokens, consumeRefreshToken, authenticateToken, AuthRequest } from '../middleware/auth.js';
 
 export const authRouter = Router();
 
@@ -74,7 +74,6 @@ authRouter.post('/login', async (req: Request, res: Response) => {
   }
 });
 
-// BUG B3: No token invalidation — refresh tokens can be reused
 authRouter.post('/refresh', (req: Request, res: Response) => {
   const { refreshToken } = req.body;
   if (!refreshToken) {
@@ -82,7 +81,7 @@ authRouter.post('/refresh', (req: Request, res: Response) => {
     return;
   }
 
-  const payload = verifyRefreshToken(refreshToken);
+  const payload = consumeRefreshToken(refreshToken);
   if (!payload) {
     res.status(403).json({ error: 'Invalid refresh token' });
     return;

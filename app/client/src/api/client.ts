@@ -2,6 +2,7 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 
 let accessToken: string | null = null;
 let refreshToken: string | null = null;
+let refreshPromise: Promise<boolean> | null = null;
 
 export function setTokens(access: string, refresh: string): void {
   accessToken = access;
@@ -22,26 +23,34 @@ export function clearTokens(): void {
   localStorage.removeItem('refreshToken');
 }
 
-// BUG B3: No mutex on refresh — multiple concurrent 401s each trigger
-// a separate refresh request with the same refresh token.
 async function refreshAccessToken(): Promise<boolean> {
   if (!refreshToken) return false;
 
-  try {
-    const res = await fetch(`${API_URL}/auth/refresh`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refreshToken }),
-    });
-
-    if (!res.ok) return false;
-
-    const data = await res.json();
-    setTokens(data.accessToken, data.refreshToken || refreshToken);
-    return true;
-  } catch {
-    return false;
+  if (refreshPromise) {
+    return refreshPromise;
   }
+
+  refreshPromise = (async () => {
+    try {
+      const res = await fetch(`${API_URL}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken }),
+      });
+
+      if (!res.ok) return false;
+
+      const data = await res.json();
+      setTokens(data.accessToken, data.refreshToken || refreshToken);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      refreshPromise = null;
+    }
+  })();
+
+  return refreshPromise;
 }
 
 export async function apiRequest<T>(
