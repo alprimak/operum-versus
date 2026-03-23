@@ -13,6 +13,16 @@ const createProjectSchema = z.object({
   description: z.string().optional(),
 });
 
+function csvEscape(value: unknown): string {
+  if (value === null || value === undefined) {
+    return '';
+  }
+
+  const stringValue = String(value);
+  const escapedValue = stringValue.replace(/"/g, '""');
+  return `"${escapedValue}"`;
+}
+
 projectRouter.get('/', (req: AuthRequest, res: Response) => {
   const db = getDb();
   const projects = db.prepare(`
@@ -24,6 +34,54 @@ projectRouter.get('/', (req: AuthRequest, res: Response) => {
   `).all(req.userId);
 
   res.json({ projects });
+});
+
+projectRouter.get('/:id/export/csv', (req: AuthRequest, res: Response) => {
+  const db = getDb();
+
+  const member = db.prepare(
+    'SELECT 1 FROM project_members WHERE project_id = ? AND user_id = ?'
+  ).get(req.params.id, req.userId);
+
+  if (!member) {
+    res.status(403).json({ error: 'Not a member of this project' });
+    return;
+  }
+
+  const tasks = db.prepare(`
+    SELECT
+      t.id,
+      t.title,
+      t.status,
+      t.priority,
+      u.name AS assignee,
+      t.due_date,
+      t.created_at
+    FROM tasks t
+    LEFT JOIN users u ON u.id = t.assignee_id
+    WHERE t.project_id = ?
+      AND t.deleted_at IS NULL
+    ORDER BY t.created_at DESC
+  `).all(req.params.id) as any[];
+
+  const header = 'id,title,status,priority,assignee,due date,created at';
+  const rows = tasks.map((task) =>
+    [
+      csvEscape(task.id),
+      csvEscape(task.title),
+      csvEscape(task.status),
+      csvEscape(task.priority),
+      csvEscape(task.assignee),
+      csvEscape(task.due_date),
+      csvEscape(task.created_at),
+    ].join(',')
+  );
+
+  const csv = [header, ...rows].join('\n');
+
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="project-${req.params.id}-tasks.csv"`);
+  res.status(200).send(csv);
 });
 
 projectRouter.post('/', (req: AuthRequest, res: Response) => {
