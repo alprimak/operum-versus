@@ -52,6 +52,82 @@ function normalizeDueDate(
   return parsedDate.toISOString();
 }
 
+const commentSchema = z.object({
+  content: z.string().min(1).max(5000),
+});
+
+function extractMentions(content: string): string[] {
+  const mentionRegex = /@([a-zA-Z0-9_.-]+)/g;
+  const mentions = new Set<string>();
+  let match: RegExpExecArray | null = mentionRegex.exec(content);
+
+  while (match) {
+    mentions.add(match[1]);
+    match = mentionRegex.exec(content);
+  }
+
+  return [...mentions];
+}
+
+function getTaskWithMembership(taskId: string, userId: string) {
+  const db = getDb();
+  return db.prepare(`
+    SELECT t.*
+    FROM tasks t
+    JOIN project_members pm ON pm.project_id = t.project_id
+    WHERE t.id = ? AND pm.user_id = ? AND t.deleted_at IS NULL
+  `).get(taskId, userId) as any;
+}
+
+function getMentionedUsersForProject(projectId: string, mentions: string[]): any[] {
+  if (mentions.length === 0) return [];
+  const db = getDb();
+  const placeholders = mentions.map(() => '?').join(', ');
+
+  return db.prepare(`
+    SELECT u.id, u.name
+    FROM users u
+    JOIN project_members pm ON pm.user_id = u.id
+    WHERE pm.project_id = ?
+      AND u.name IN (${placeholders})
+  `).all(projectId, ...mentions) as any[];
+}
+
+function createMentionNotifications(
+  projectId: string,
+  commentId: string,
+  content: string,
+  authorId: string
+): void {
+  const mentions = extractMentions(content);
+  if (mentions.length === 0) return;
+
+  const db = getDb();
+  const mentionedUsers = getMentionedUsersForProject(projectId, mentions);
+  const matchedNames = new Set(mentionedUsers.map((u) => u.name));
+  const invalidMentions = mentions.filter((mention) => !matchedNames.has(mention));
+
+  if (invalidMentions.length > 0) {
+    throw new Error('Only project members can be mentioned');
+  }
+
+  const insertNotification = db.prepare(`
+    INSERT INTO notifications (id, user_id, type, reference_id, message)
+    VALUES (?, ?, ?, ?, ?)
+  `);
+
+  for (const user of mentionedUsers) {
+    if (user.id === authorId) continue;
+    insertNotification.run(
+      uuidv4(),
+      user.id,
+      'mention',
+      commentId,
+      `You were mentioned in a task comment`
+    );
+  }
+}
+
 taskRouter.get('/project/:projectId', (req: AuthRequest, res: Response) => {
   const db = getDb();
 
@@ -221,5 +297,151 @@ taskRouter.delete('/:id', (req: AuthRequest, res: Response) => {
   logActivity(task.project_id, req.params.id, req.userId!, 'task_deleted',
     `Deleted task "${task.title}"`);
 
+  res.status(204).send();
+});
+
+taskRouter.get('/:taskId/comments', (req: AuthRequest, res: Response) => {
+  const task = getTaskWithMembership(req.params.taskId, req.userId!);
+  if (!task) {
+    res.status(404).json({ error: 'Task not found' });
+    return;
+  }
+
+  const db = getDb();
+  const comments = db.prepare(`
+    SELECT c.*, u.name AS author_name
+    FROM comments c
+    JOIN users u ON u.id = c.user_id
+    WHERE c.task_id = ?
+    ORDER BY c.created_at ASC
+  `).all(req.params.taskId);
+
+  res.json({ comments });
+});
+
+taskRouter.post('/:taskId/comments', (req: AuthRequest, res: Response) => {
+  try {
+    const { content } = commentSchema.parse(req.body);
+    const task = getTaskWithMembership(req.params.taskId, req.userId!);
+    if (!task) {
+      res.status(404).json({ error: 'Task not found' });
+      return;
+    }
+
+    const db = getDb();
+    const commentId = uuidv4();
+    db.prepare(`
+      INSERT INTO comments (id, task_id, user_id, content)
+      VALUES (?, ?, ?, ?)
+    `).run(commentId, req.params.taskId, req.userId, content);
+
+    try {
+      createMentionNotifications(task.project_id, commentId, content, req.userId!);
+    } catch (err) {
+      db.prepare('DELETE FROM comments WHERE id = ?').run(commentId);
+      if (err instanceof Error && err.message === 'Only project members can be mentioned') {
+        res.status(400).json({ error: err.message });
+        return;
+      }
+      throw err;
+    }
+
+    const comment = db.prepare(`
+      SELECT c.*, u.name AS author_name
+      FROM comments c
+      JOIN users u ON u.id = c.user_id
+      WHERE c.id = ?
+    `).get(commentId);
+
+    res.status(201).json({ comment });
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: 'Validation failed', details: err.errors });
+      return;
+    }
+    throw err;
+  }
+});
+
+taskRouter.put('/:taskId/comments/:commentId', (req: AuthRequest, res: Response) => {
+  try {
+    const { content } = commentSchema.parse(req.body);
+    const task = getTaskWithMembership(req.params.taskId, req.userId!);
+    if (!task) {
+      res.status(404).json({ error: 'Task not found' });
+      return;
+    }
+
+    const db = getDb();
+    const existingComment = db.prepare(`
+      SELECT id, user_id
+      FROM comments
+      WHERE id = ? AND task_id = ?
+    `).get(req.params.commentId, req.params.taskId) as any;
+
+    if (!existingComment) {
+      res.status(404).json({ error: 'Comment not found' });
+      return;
+    }
+
+    if (existingComment.user_id !== req.userId) {
+      res.status(403).json({ error: 'Only comment author can edit' });
+      return;
+    }
+
+    db.prepare(`
+      UPDATE comments
+      SET content = ?, updated_at = datetime('now')
+      WHERE id = ?
+    `).run(content, req.params.commentId);
+
+    createMentionNotifications(task.project_id, req.params.commentId, content, req.userId!);
+
+    const comment = db.prepare(`
+      SELECT c.*, u.name AS author_name
+      FROM comments c
+      JOIN users u ON u.id = c.user_id
+      WHERE c.id = ?
+    `).get(req.params.commentId);
+
+    res.json({ comment });
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: 'Validation failed', details: err.errors });
+      return;
+    }
+    if (err instanceof Error && err.message === 'Only project members can be mentioned') {
+      res.status(400).json({ error: err.message });
+      return;
+    }
+    throw err;
+  }
+});
+
+taskRouter.delete('/:taskId/comments/:commentId', (req: AuthRequest, res: Response) => {
+  const task = getTaskWithMembership(req.params.taskId, req.userId!);
+  if (!task) {
+    res.status(404).json({ error: 'Task not found' });
+    return;
+  }
+
+  const db = getDb();
+  const existingComment = db.prepare(`
+    SELECT id, user_id
+    FROM comments
+    WHERE id = ? AND task_id = ?
+  `).get(req.params.commentId, req.params.taskId) as any;
+
+  if (!existingComment) {
+    res.status(404).json({ error: 'Comment not found' });
+    return;
+  }
+
+  if (existingComment.user_id !== req.userId) {
+    res.status(403).json({ error: 'Only comment author can delete' });
+    return;
+  }
+
+  db.prepare('DELETE FROM comments WHERE id = ?').run(req.params.commentId);
   res.status(204).send();
 });

@@ -116,6 +116,14 @@ export const tasks = {
     apiRequest(`/tasks/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (id: string) =>
     apiRequest(`/tasks/${id}`, { method: 'DELETE' }),
+  listComments: (taskId: string) =>
+    apiRequest<{ comments: any[] }>(`/tasks/${taskId}/comments`),
+  addComment: (taskId: string, data: { content: string }) =>
+    apiRequest(`/tasks/${taskId}/comments`, { method: 'POST', body: JSON.stringify(data) }),
+  updateComment: (taskId: string, commentId: string, data: { content: string }) =>
+    apiRequest(`/tasks/${taskId}/comments/${commentId}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteComment: (taskId: string, commentId: string) =>
+    apiRequest(`/tasks/${taskId}/comments/${commentId}`, { method: 'DELETE' }),
 };
 
 // Dashboard
@@ -127,4 +135,10 @@ export const dashboard = {
 export const activity = {
   listByProject: (projectId: string, limit = 50, offset = 0) =>
     apiRequest<{ activities: any[] }>(`/activity/project/${projectId}?limit=${limit}&offset=${offset}`),
+};
+
+// Notifications
+export const notifications = {
+  list: () => apiRequest<{ notifications: any[]; unreadCount: number }>('/notifications'),
+  markRead: (id: string) => apiRequest(`/notifications/${id}/read`, { method: 'PUT' }),
 };
