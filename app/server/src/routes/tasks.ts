@@ -27,6 +27,14 @@ const updateTaskSchema = z.object({
   due_date: z.string().nullable().optional(),
 });
 
+const searchTaskSchema = z.object({
+  query: z.string().trim().optional(),
+  status: z.enum(['todo', 'in_progress', 'review', 'done']).optional(),
+  priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
+  assignee: z.string().uuid().optional(),
+  project_id: z.string().uuid().optional(),
+});
+
 function normalizeDueDate(
   value: string | null | undefined
 ): string | null | undefined {
@@ -127,7 +135,57 @@ function createMentionNotifications(
     );
   }
 }
+taskRouter.get('/search', (req: AuthRequest, res: Response) => {
+  try {
+    const parsed = searchTaskSchema.parse(req.query);
+    const db = getDb();
+    const where: string[] = ['pm.user_id = ?', 't.deleted_at IS NULL'];
+    const params: any[] = [req.userId];
 
+    if (parsed.project_id) {
+      where.push('t.project_id = ?');
+      params.push(parsed.project_id);
+    }
+    if (parsed.status) {
+      where.push('t.status = ?');
+      params.push(parsed.status);
+    }
+    if (parsed.priority) {
+      where.push('t.priority = ?');
+      params.push(parsed.priority);
+    }
+    if (parsed.assignee) {
+      where.push('t.assignee_id = ?');
+      params.push(parsed.assignee);
+    }
+    if (parsed.query && parsed.query.length > 0) {
+      const searchTerm = `%${parsed.query}%`;
+      where.push('(t.title LIKE ? OR COALESCE(t.description, \'\') LIKE ?)');
+      params.push(searchTerm, searchTerm);
+    }
+
+    const tasks = db.prepare(`
+      SELECT
+        t.*,
+        u.name as assignee_name,
+        p.name as project_name
+      FROM tasks t
+      INNER JOIN project_members pm ON pm.project_id = t.project_id
+      INNER JOIN projects p ON p.id = t.project_id
+      LEFT JOIN users u ON t.assignee_id = u.id
+      WHERE ${where.join(' AND ')}
+      ORDER BY t.created_at DESC
+    `).all(...params);
+
+    res.json({ tasks });
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: 'Validation failed', details: err.errors });
+      return;
+    }
+    throw err;
+  }
+});
 taskRouter.get('/project/:projectId', (req: AuthRequest, res: Response) => {
   const db = getDb();
 
