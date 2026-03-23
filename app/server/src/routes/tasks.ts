@@ -18,6 +18,7 @@ const createTaskSchema = z.object({
 });
 
 const updateTaskSchema = z.object({
+  project_id: z.string().uuid().optional(),
   title: z.string().min(1).max(200).optional(),
   description: z.string().optional(),
   status: z.enum(['todo', 'in_progress', 'review', 'done']).optional(),
@@ -113,10 +114,21 @@ taskRouter.put('/:id', (req: AuthRequest, res: Response) => {
       return;
     }
 
-    // BUG B1: The assignee_id update doesn't validate that the assignee
-    // is a member of the project. Also, when updating from the frontend
-    // after switching projects, the task.project_id here is from the OLD
-    // project because the frontend sends stale data.
+    const nextProjectId = updates.project_id ?? task.project_id;
+    const nextAssigneeId =
+      updates.assignee_id !== undefined ? updates.assignee_id : task.assignee_id;
+
+    if (nextAssigneeId) {
+      const assigneeMember = db.prepare(
+        'SELECT 1 FROM project_members WHERE project_id = ? AND user_id = ?'
+      ).get(nextProjectId, nextAssigneeId);
+
+      if (!assigneeMember) {
+        res.status(400).json({ error: 'Assignee must be a member of the target project' });
+        return;
+      }
+    }
+
     const fields: string[] = [];
     const values: any[] = [];
 
@@ -132,7 +144,7 @@ taskRouter.put('/:id', (req: AuthRequest, res: Response) => {
       return;
     }
 
-    fields.push('updated_at = datetime("now")');
+    fields.push("updated_at = datetime('now')");
     values.push(req.params.id);
 
     db.prepare(`UPDATE tasks SET ${fields.join(', ')} WHERE id = ?`).run(...values);
