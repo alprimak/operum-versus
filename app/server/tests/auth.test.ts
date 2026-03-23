@@ -69,7 +69,7 @@ describe('Authentication', () => {
       .send({ refreshToken });
     expect(first.status).toBe(200);
 
-    // Second refresh with same token should FAIL (but currently passes — BUG)
+    // Second refresh with same token should fail (single-use enforcement)
     const second = await request(app)
       .post('/api/auth/refresh')
       .send({ refreshToken });
