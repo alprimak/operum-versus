@@ -28,15 +28,45 @@ const priorityColors: Record<string, string> = {
   urgent: 'bg-red-50 text-red-600',
 };
 
-// BUG B5: Due date display uses new Date() which applies timezone offset
+function extractUtcDateKey(dateStr: string): string | null {
+  const dateOnlyMatch = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (dateOnlyMatch) {
+    return `${dateOnlyMatch[1]}-${dateOnlyMatch[2]}-${dateOnlyMatch[3]}`;
+  }
+
+  const parsed = new Date(dateStr);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  return parsed.toISOString().slice(0, 10);
+}
+
 function formatDueDate(dateStr: string): string {
-  const date = new Date(dateStr);
-  return date.toLocaleDateString();
+  const dateKey = extractUtcDateKey(dateStr);
+  if (!dateKey) {
+    return dateStr;
+  }
+
+  const [year, month, day] = dateKey.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return new Intl.DateTimeFormat(undefined, { timeZone: 'UTC' }).format(date);
 }
 
 function isDueDateOverdue(dateStr: string): boolean {
-  const date = new Date(dateStr);
-  return date < new Date() ;
+  const dueDateKey = extractUtcDateKey(dateStr);
+  if (!dueDateKey) {
+    return false;
+  }
+
+  const now = new Date();
+  const todayUtcKey = [
+    now.getUTCFullYear(),
+    String(now.getUTCMonth() + 1).padStart(2, '0'),
+    String(now.getUTCDate()).padStart(2, '0'),
+  ].join('-');
+
+  return dueDateKey < todayUtcKey;
 }
 
 export function TaskCard({ task, onStatusChange, onAssigneeChange }: TaskCardProps) {

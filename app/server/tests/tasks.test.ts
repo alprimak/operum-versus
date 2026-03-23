@@ -86,4 +86,38 @@ describe('Tasks', () => {
     expect(updateRes.body.task.project_id).toBe(targetProjectId);
     expect(updateRes.body.task.assignee_id).toBe(assigneeId);
   });
+
+  it('stores date-only due_date values as UTC midnight ISO strings', async () => {
+    const createTaskRes = await request(app)
+      .post('/api/tasks')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({
+        project_id: sourceProjectId,
+        title: 'Date-only due date',
+        due_date: '2024-06-30',
+      });
+
+    expect(createTaskRes.status).toBe(201);
+    expect(createTaskRes.body.task.due_date).toBe('2024-06-30T00:00:00.000Z');
+  });
+
+  it('normalizes due_date updates to UTC midnight for date-only inputs', async () => {
+    const createTaskRes = await request(app)
+      .post('/api/tasks')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({
+        project_id: sourceProjectId,
+        title: 'Update date-only due date',
+      });
+
+    const taskId = createTaskRes.body.task.id;
+
+    const updateRes = await request(app)
+      .put(`/api/tasks/${taskId}`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ due_date: '2024-06-30' });
+
+    expect(updateRes.status).toBe(200);
+    expect(updateRes.body.task.due_date).toBe('2024-06-30T00:00:00.000Z');
+  });
 });

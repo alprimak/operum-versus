@@ -27,6 +27,31 @@ const updateTaskSchema = z.object({
   due_date: z.string().nullable().optional(),
 });
 
+function normalizeDueDate(
+  value: string | null | undefined
+): string | null | undefined {
+  if (value === undefined || value === null) {
+    return value;
+  }
+
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+
+  const dateOnlyMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (dateOnlyMatch) {
+    return `${dateOnlyMatch[1]}-${dateOnlyMatch[2]}-${dateOnlyMatch[3]}T00:00:00.000Z`;
+  }
+
+  const parsedDate = new Date(trimmed);
+  if (Number.isNaN(parsedDate.getTime())) {
+    throw new Error('Invalid due_date');
+  }
+
+  return parsedDate.toISOString();
+}
+
 taskRouter.get('/project/:projectId', (req: AuthRequest, res: Response) => {
   const db = getDb();
 
@@ -61,6 +86,7 @@ taskRouter.post('/', (req: AuthRequest, res: Response) => {
   try {
     const data = createTaskSchema.parse(req.body);
     const db = getDb();
+    const normalizedDueDate = normalizeDueDate(data.due_date);
 
     // Verify membership
     const member = db.prepare(
@@ -78,7 +104,7 @@ taskRouter.post('/', (req: AuthRequest, res: Response) => {
       INSERT INTO tasks (id, project_id, title, description, priority, assignee_id, due_date, created_by)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).run(id, data.project_id, data.title, data.description || null,
-      data.priority || 'medium', data.assignee_id || null, data.due_date || null, req.userId);
+      data.priority || 'medium', data.assignee_id || null, normalizedDueDate ?? null, req.userId);
 
     logActivity(data.project_id, id, req.userId!, 'task_created', `Created task "${data.title}"`);
 
@@ -129,10 +155,16 @@ taskRouter.put('/:id', (req: AuthRequest, res: Response) => {
       }
     }
 
+    const normalizedUpdates = {
+      ...updates,
+      due_date:
+        updates.due_date !== undefined ? normalizeDueDate(updates.due_date) : undefined,
+    };
+
     const fields: string[] = [];
     const values: any[] = [];
 
-    for (const [key, value] of Object.entries(updates)) {
+    for (const [key, value] of Object.entries(normalizedUpdates)) {
       if (value !== undefined) {
         fields.push(`${key} = ?`);
         values.push(value);
@@ -160,6 +192,10 @@ taskRouter.put('/:id', (req: AuthRequest, res: Response) => {
     const updatedTask = db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id);
     res.json({ task: updatedTask });
   } catch (err) {
+    if (err instanceof Error && err.message === 'Invalid due_date') {
+      res.status(400).json({ error: 'Invalid due_date' });
+      return;
+    }
     if (err instanceof z.ZodError) {
       res.status(400).json({ error: 'Validation failed', details: err.errors });
       return;
