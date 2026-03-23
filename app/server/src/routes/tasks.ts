@@ -135,12 +135,6 @@ taskRouter.get('/project/:projectId', (req: AuthRequest, res: Response) => {
     return;
   }
 
-  // BUG B1: When fetching tasks, assignee_id is selected but not joined with
-  // user data, and on the frontend the assignee dropdown resets because
-  // the response doesn't include the assignee name. Additionally, when
-  // switching projects, the task list briefly shows tasks from the previous
-  // project because the query doesn't properly filter by the new project_id
-  // when there's a race condition in the request.
   const tasks = taskRepository.listTasksForProject(req.params.projectId);
 
   res.json({ tasks });
@@ -238,10 +232,6 @@ taskRouter.put('/:id', (req: AuthRequest, res: Response) => {
     fields.push("updated_at = datetime('now')");
     taskRepository.updateTask(req.params.id, fields, values);
 
-    // BUG B4: Activity logging happens for every field update individually
-    // when batch updates come in rapid succession. The frontend sends
-    // separate requests for status change and assignee change, causing
-    // duplicate activity entries with nearly identical timestamps.
     const changes = Object.keys(updates).join(', ');
     logActivity(task.project_id, req.params.id, req.userId!, 'task_updated',
       `Updated ${changes} on "${task.title}"`);
