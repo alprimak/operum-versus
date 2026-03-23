@@ -149,10 +149,10 @@ Using a different model family (OpenAI) than the contestant (Claude) ensures eva
 
 | Date | System | Avg Score | Failures | Notes |
 |------|--------|-----------|----------|-------|
-| 2026-03-23 | GPT o3 (Operum) | **8.3/10** | 0/10 | 1 QA revision on R1 |
+| 2026-03-23 | Cursor (GPT-5.3 Codex) | **8.3/10** | 0/10 | 1 QA revision on R1 |
 | 2026-03-12 | Claude Code (Operum) | **7.47/10** | 2/10 | R1 reintroduced bugs; R2 incomplete |
 
-### GPT o3 — 2026-03-23
+### Cursor (GPT-5.3 Codex) — 2026-03-23
 
 | Challenge | PR | Score | Verdict |
 |-----------|----|-------|---------|
