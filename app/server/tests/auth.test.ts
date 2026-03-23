@@ -2,11 +2,13 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import request from 'supertest';
 import { app } from '../src/index.js';
 import { initDatabase, resetDatabase } from '../src/models/database.js';
+import { resetRefreshTokenStore } from '../src/middleware/auth.js';
 
 describe('Authentication', () => {
   beforeEach(() => {
     resetDatabase();
     initDatabase();
+    resetRefreshTokenStore();
   });
 
   it('should register a new user', async () => {
@@ -54,8 +56,6 @@ describe('Authentication', () => {
     expect(res.body.accessToken).toBeDefined();
   });
 
-  // BUG B3: This test SHOULD fail — refresh tokens should be single-use
-  // but currently they can be reused indefinitely
   it('should invalidate refresh token after use', async () => {
     const registerRes = await request(app)
       .post('/api/auth/register')
@@ -74,5 +74,21 @@ describe('Authentication', () => {
       .post('/api/auth/refresh')
       .send({ refreshToken });
     expect(second.status).toBe(403);
+  });
+
+  it('should allow only one concurrent refresh per token', async () => {
+    const registerRes = await request(app)
+      .post('/api/auth/register')
+      .send({ email: 'race@test.com', password: 'password123', name: 'Race User' });
+
+    const refreshToken = registerRes.body.refreshToken;
+
+    const [first, second] = await Promise.all([
+      request(app).post('/api/auth/refresh').send({ refreshToken }),
+      request(app).post('/api/auth/refresh').send({ refreshToken }),
+    ]);
+
+    const statuses = [first.status, second.status].sort((a, b) => a - b);
+    expect(statuses).toEqual([200, 403]);
   });
 });
