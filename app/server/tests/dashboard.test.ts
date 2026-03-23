@@ -64,8 +64,7 @@ describe('Dashboard', () => {
       .set('Authorization', `Bearer ${authToken}`);
 
     expect(res.status).toBe(200);
+    // BUG B2: This expects 2 but gets 3 because deleted tasks are counted
     expect(res.body.totalTasks).toBe(2);
-    expect(res.body.tasksByStatus.todo).toBe(2);
-    expect(res.body.tasksByPriority.medium).toBe(2);
   });
 });

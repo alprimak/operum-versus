@@ -1,13 +1,17 @@
 import { Router, Response } from 'express';
+import { getDb } from '../models/database.js';
 import { authenticateToken, AuthRequest } from '../middleware/auth.js';
-import { ActivityRepository } from '../db/activityRepository.js';
 
 export const activityRouter = Router();
 activityRouter.use(authenticateToken);
-const activityRepository = new ActivityRepository();
 
 activityRouter.get('/project/:projectId', (req: AuthRequest, res: Response) => {
-  const member = activityRepository.isProjectMember(req.params.projectId, req.userId!);
+  const db = getDb();
+
+  // Verify membership
+  const member = db.prepare(
+    'SELECT 1 FROM project_members WHERE project_id = ? AND user_id = ?'
+  ).get(req.params.projectId, req.userId);
 
   if (!member) {
     res.status(403).json({ error: 'Not a member of this project' });
@@ -20,7 +24,14 @@ activityRouter.get('/project/:projectId', (req: AuthRequest, res: Response) => {
   // BUG B4: No deduplication — rapid consecutive updates to the same task
   // generate multiple activity entries with timestamps within the same second.
   // The frontend shows all of them, creating a cluttered activity feed.
-  const activities = activityRepository.listForProject(req.params.projectId, limit, offset);
+  const activities = db.prepare(`
+    SELECT al.*, u.name as user_name
+    FROM activity_log al
+    JOIN users u ON al.user_id = u.id
+    WHERE al.project_id = ?
+    ORDER BY al.created_at DESC
+    LIMIT ? OFFSET ?
+  `).all(req.params.projectId, limit, offset);
 
   res.json({ activities });
 });

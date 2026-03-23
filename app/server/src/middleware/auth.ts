@@ -1,11 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-import { randomUUID } from 'crypto';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'taskflow-dev-secret-key';
 const TOKEN_EXPIRY = '1h';
 const REFRESH_TOKEN_EXPIRY = '7d';
-const usedRefreshTokenIds = new Set<string>();
 
 export interface AuthRequest extends Request {
   userId?: string;
@@ -31,26 +29,20 @@ export function authenticateToken(req: AuthRequest, res: Response, next: NextFun
 
 export function generateTokens(userId: string): { accessToken: string; refreshToken: string } {
   const accessToken = jwt.sign({ userId }, JWT_SECRET, { expiresIn: TOKEN_EXPIRY });
-  const refreshToken = jwt.sign(
-    { userId, type: 'refresh' },
-    JWT_SECRET,
-    { expiresIn: REFRESH_TOKEN_EXPIRY, jwtid: randomUUID() }
-  );
+  const refreshToken = jwt.sign({ userId, type: 'refresh' }, JWT_SECRET, { expiresIn: REFRESH_TOKEN_EXPIRY });
   return { accessToken, refreshToken };
 }
 
-export function consumeRefreshToken(token: string): { userId: string } | null {
+// BUG B3: Race condition in token refresh — if two requests hit refresh
+// simultaneously with the same refresh token, both will succeed but the
+// second one will use a token that should have been invalidated.
+// There's no token blacklist or single-use enforcement.
+export function verifyRefreshToken(token: string): { userId: string } | null {
   try {
-    const payload = jwt.verify(token, JWT_SECRET) as { userId: string; type: string; jti?: string };
-    if (payload.type !== 'refresh' || !payload.jti) return null;
-    if (usedRefreshTokenIds.has(payload.jti)) return null;
-    usedRefreshTokenIds.add(payload.jti);
+    const payload = jwt.verify(token, JWT_SECRET) as { userId: string; type: string };
+    if (payload.type !== 'refresh') return null;
     return { userId: payload.userId };
   } catch {
     return null;
   }
-}
-
-export function resetRefreshTokenStore(): void {
-  usedRefreshTokenIds.clear();
 }

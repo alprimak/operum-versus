@@ -6,7 +6,6 @@ import { projectRouter } from './routes/projects.js';
 import { taskRouter } from './routes/tasks.js';
 import { activityRouter } from './routes/activity.js';
 import { dashboardRouter } from './routes/dashboard.js';
-import { notificationRouter } from './routes/notifications.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
 const app = express();
@@ -24,7 +23,6 @@ app.use('/api/projects', projectRouter);
 app.use('/api/tasks', taskRouter);
 app.use('/api/activity', activityRouter);
 app.use('/api/dashboard', dashboardRouter);
-app.use('/api/notifications', notificationRouter);
 
 // Health check
 app.get('/api/health', (_req, res) => {

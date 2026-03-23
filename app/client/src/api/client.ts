@@ -2,40 +2,17 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 
 let accessToken: string | null = null;
 let refreshToken: string | null = null;
-let refreshPromise: Promise<boolean> | null = null;
-const tokenListeners = new Set<(token: string | null) => void>();
-
-function notifyTokenListeners(): void {
-  for (const listener of tokenListeners) {
-    listener(accessToken);
-  }
-}
-
-export function subscribeToTokenChanges(
-  listener: (token: string | null) => void
-): () => void {
-  tokenListeners.add(listener);
-  return () => {
-    tokenListeners.delete(listener);
-  };
-}
-
-export function getAccessToken(): string | null {
-  return accessToken;
-}
 
 export function setTokens(access: string, refresh: string): void {
   accessToken = access;
   refreshToken = refresh;
   localStorage.setItem('accessToken', access);
   localStorage.setItem('refreshToken', refresh);
-  notifyTokenListeners();
 }
 
 export function loadTokens(): void {
   accessToken = localStorage.getItem('accessToken');
   refreshToken = localStorage.getItem('refreshToken');
-  notifyTokenListeners();
 }
 
 export function clearTokens(): void {
@@ -43,37 +20,28 @@ export function clearTokens(): void {
   refreshToken = null;
   localStorage.removeItem('accessToken');
   localStorage.removeItem('refreshToken');
-  notifyTokenListeners();
 }
 
+// BUG B3: No mutex on refresh — multiple concurrent 401s each trigger
+// a separate refresh request with the same refresh token.
 async function refreshAccessToken(): Promise<boolean> {
   if (!refreshToken) return false;
 
-  if (refreshPromise) {
-    return refreshPromise;
+  try {
+    const res = await fetch(`${API_URL}/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refreshToken }),
+    });
+
+    if (!res.ok) return false;
+
+    const data = await res.json();
+    setTokens(data.accessToken, data.refreshToken || refreshToken);
+    return true;
+  } catch {
+    return false;
   }
-
-  refreshPromise = (async () => {
-    try {
-      const res = await fetch(`${API_URL}/auth/refresh`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken }),
-      });
-
-      if (!res.ok) return false;
-
-      const data = await res.json();
-      setTokens(data.accessToken, data.refreshToken || refreshToken);
-      return true;
-    } catch {
-      return false;
-    } finally {
-      refreshPromise = null;
-    }
-  })();
-
-  return refreshPromise;
 }
 
 export async function apiRequest<T>(
@@ -111,16 +79,10 @@ export async function apiRequest<T>(
 // Auth
 export const auth = {
   register: (data: { email: string; password: string; name: string }) =>
-    apiRequest<{ user: any; accessToken: string; refreshToken: string }>('/auth/register', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }),
+    apiRequest('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
   login: (data: { email: string; password: string }) =>
-    apiRequest<{ user: any; accessToken: string; refreshToken: string }>('/auth/login', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }),
-  me: () => apiRequest<{ user: any }>('/auth/me'),
+    apiRequest('/auth/login', { method: 'POST', body: JSON.stringify(data) }),
+  me: () => apiRequest('/auth/me'),
 };
 
 // Projects
@@ -145,14 +107,6 @@ export const tasks = {
     apiRequest(`/tasks/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (id: string) =>
     apiRequest(`/tasks/${id}`, { method: 'DELETE' }),
-  listComments: (taskId: string) =>
-    apiRequest<{ comments: any[] }>(`/tasks/${taskId}/comments`),
-  addComment: (taskId: string, data: { content: string }) =>
-    apiRequest(`/tasks/${taskId}/comments`, { method: 'POST', body: JSON.stringify(data) }),
-  updateComment: (taskId: string, commentId: string, data: { content: string }) =>
-    apiRequest(`/tasks/${taskId}/comments/${commentId}`, { method: 'PUT', body: JSON.stringify(data) }),
-  deleteComment: (taskId: string, commentId: string) =>
-    apiRequest(`/tasks/${taskId}/comments/${commentId}`, { method: 'DELETE' }),
 };
 
 // Dashboard
@@ -164,10 +118,4 @@ export const dashboard = {
 export const activity = {
   listByProject: (projectId: string, limit = 50, offset = 0) =>
     apiRequest<{ activities: any[] }>(`/activity/project/${projectId}?limit=${limit}&offset=${offset}`),
-};
-
-// Notifications
-export const notifications = {
-  list: () => apiRequest<{ notifications: any[]; unreadCount: number }>('/notifications'),
-  markRead: (id: string) => apiRequest(`/notifications/${id}/read`, { method: 'PUT' }),
 };

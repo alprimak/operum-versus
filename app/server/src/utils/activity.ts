@@ -9,33 +9,12 @@ export function logActivity(
   details: string
 ): void {
   const db = getDb();
-  const dedupeWindowSeconds = 5;
-  const recentEntry = db.prepare(`
-    SELECT id
-    FROM activity_log
-    WHERE project_id = ?
-      AND user_id = ?
-      AND action = ?
-      AND (
-        (task_id = ?)
-        OR (task_id IS NULL AND ? IS NULL)
-      )
-      AND created_at >= datetime('now', ?)
-    ORDER BY created_at DESC
-    LIMIT 1
-  `).get(projectId, userId, action, taskId, taskId, `-${dedupeWindowSeconds} seconds`) as { id: string } | undefined;
-
-  if (recentEntry) {
-    // Keep a single activity row for rapid repeated actions and refresh details.
-    db.prepare(`
-      UPDATE activity_log
-      SET details = ?
-      WHERE id = ?
-    `).run(details, recentEntry.id);
-    return;
-  }
-
   const id = uuidv4();
+
+  // BUG B4: No debouncing or deduplication logic.
+  // If the same user updates the same task multiple times within a short
+  // window (e.g., changing status then assignee), each update creates
+  // a separate activity entry. Should consolidate rapid updates.
   db.prepare(`
     INSERT INTO activity_log (id, project_id, task_id, user_id, action, details)
     VALUES (?, ?, ?, ?, ?, ?)
