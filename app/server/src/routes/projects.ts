@@ -31,32 +31,12 @@ projectRouter.get('/', (req: AuthRequest, res: Response) => {
 });
 
 projectRouter.get('/:id/export/csv', (req: AuthRequest, res: Response) => {
-  const db = getDb();
-
-  const member = db.prepare(
-    'SELECT 1 FROM project_members WHERE project_id = ? AND user_id = ?'
-  ).get(req.params.id, req.userId);
-
-  if (!member) {
+  if (!projectRepository.isProjectMember(req.params.id, req.userId!)) {
     res.status(403).json({ error: 'Not a member of this project' });
     return;
   }
 
-  const tasks = db.prepare(`
-    SELECT
-      t.id,
-      t.title,
-      t.status,
-      t.priority,
-      u.name AS assignee,
-      t.due_date,
-      t.created_at
-    FROM tasks t
-    LEFT JOIN users u ON u.id = t.assignee_id
-    WHERE t.project_id = ?
-      AND t.deleted_at IS NULL
-    ORDER BY t.created_at DESC
-  `).all(req.params.id) as any[];
+  const tasks = projectRepository.listProjectTasksForCsv(req.params.id) as any[];
 
   const header = 'id,title,status,priority,assignee,due date,created at';
   const rows = tasks.map((task) =>

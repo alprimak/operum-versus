@@ -50,6 +50,31 @@ export class ProjectRepository {
     ).get(projectId, userId) as { role: string } | undefined;
   }
 
+  isProjectMember(projectId: string, userId: string): boolean {
+    const member = this.getDatabase().prepare(
+      'SELECT 1 FROM project_members WHERE project_id = ? AND user_id = ?'
+    ).get(projectId, userId);
+    return Boolean(member);
+  }
+
+  listProjectTasksForCsv(projectId: string): any[] {
+    return this.getDatabase().prepare(`
+      SELECT
+        t.id,
+        t.title,
+        t.status,
+        t.priority,
+        u.name AS assignee,
+        t.due_date,
+        t.created_at
+      FROM tasks t
+      LEFT JOIN users u ON u.id = t.assignee_id
+      WHERE t.project_id = ?
+        AND t.deleted_at IS NULL
+      ORDER BY t.created_at DESC
+    `).all(projectId) as any[];
+  }
+
   updateProject(projectId: string, name: string, description: string): void {
     this.getDatabase().prepare('UPDATE projects SET name = ?, description = ?, updated_at = datetime("now") WHERE id = ?')
       .run(name, description, projectId);
