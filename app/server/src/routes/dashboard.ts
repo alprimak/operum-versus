@@ -27,17 +27,17 @@ dashboardRouter.get('/stats', (req: AuthRequest, res: Response) => {
   const ids = projectIds.map((p: any) => p.project_id);
   const placeholders = ids.map(() => '?').join(',');
 
-  // BUG B2: This query counts ALL tasks including soft-deleted ones
-  // (where deleted_at IS NOT NULL). The dashboard shows inflated numbers
-  // because deleted tasks are still included in the count.
   const totalTasks = db.prepare(`
     SELECT COUNT(*) as count FROM tasks
     WHERE project_id IN (${placeholders})
+    AND deleted_at IS NULL
   `).get(...ids) as any;
 
   const completedTasks = db.prepare(`
     SELECT COUNT(*) as count FROM tasks
-    WHERE project_id IN (${placeholders}) AND status = 'done'
+    WHERE project_id IN (${placeholders})
+    AND status = 'done'
+    AND deleted_at IS NULL
   `).get(...ids) as any;
 
   const overdueTasks = db.prepare(`
@@ -45,17 +45,20 @@ dashboardRouter.get('/stats', (req: AuthRequest, res: Response) => {
     WHERE project_id IN (${placeholders})
     AND due_date < datetime('now')
     AND status != 'done'
+    AND deleted_at IS NULL
   `).get(...ids) as any;
 
   const tasksByStatus = db.prepare(`
     SELECT status, COUNT(*) as count FROM tasks
     WHERE project_id IN (${placeholders})
+    AND deleted_at IS NULL
     GROUP BY status
   `).all(...ids) as any[];
 
   const tasksByPriority = db.prepare(`
     SELECT priority, COUNT(*) as count FROM tasks
     WHERE project_id IN (${placeholders})
+    AND deleted_at IS NULL
     GROUP BY priority
   `).all(...ids) as any[];
 
