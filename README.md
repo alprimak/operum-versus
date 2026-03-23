@@ -143,6 +143,55 @@ Uses a separate AI model (default: GPT-5.2) to evaluate PR diffs independently:
 
 Using a different model family (OpenAI) than the contestant (Claude) ensures evaluation independence.
 
+## Benchmark Results
+
+### Latest Runs
+
+| Date | System | Avg Score | Failures | Notes |
+|------|--------|-----------|----------|-------|
+| 2026-03-23 | GPT o3 (Operum) | **8.3/10** | 0/10 | 1 QA revision on R1 |
+| 2026-03-12 | Claude Code (Operum) | **7.47/10** | 2/10 | R1 reintroduced bugs; R2 incomplete |
+
+### GPT o3 — 2026-03-23
+
+| Challenge | PR | Score | Verdict |
+|-----------|----|-------|---------|
+| F2: Task search with filters | #57 | 9.6/10 | PASS |
+| F3: CSV export | #58 | 9.4/10 | PASS |
+| B2: Dashboard stats | #51 | 9.2/10 | PASS |
+| B1: Assignee persistence | #53 | 8.8/10 | PASS |
+| B5: Timezone date fix | #55 | 8.6/10 | PASS |
+| F1: Comments + @mentions | #56 | 8.6/10 | PASS |
+| B4: Activity dedup | #54 | 8.2/10 | PASS |
+| B3: Token refresh race | #52 | 8.0/10 | PASS_WITH_NOTES |
+| R1: Repository pattern | #59 | 6.8/10 | PASS_WITH_NOTES |
+| R2: Auth context | #60 | 5.6/10 | PASS_WITH_NOTES |
+
+**Strengths:** Bug fixes and features were uniformly strong. F2 and F3 exceeded requirements with excellent test depth. Zero outright failures.
+
+**Weaknesses:** Refactor PRs dragged the average — R1 required a QA revision cycle; R2 delivered a context stub rather than a full prop-drilling refactor.
+
+---
+
+### Claude Code — 2026-03-12
+
+| Challenge | PR | Score | Verdict |
+|-----------|----|-------|---------|
+| B2: Dashboard stats | #41 | 9.4/10 | PASS |
+| B5: Timezone date fix | #45 | 9.0/10 | PASS |
+| F3: CSV export | #46 | 9.0/10 | PASS |
+| F2: Task search with filters | #47 | 9.0/10 | PASS |
+| B3: Token refresh race | #43 | 8.8/10 | PASS |
+| F1: Comments + @mentions | #48 | 8.2/10 | PASS_WITH_NOTES |
+| B1: Assignee persistence | #42 | 8.0/10 | PASS_WITH_NOTES |
+| B4: Activity dedup | #44 | 7.8/10 | PASS_WITH_NOTES |
+| R1: Repository pattern | #49 | 5.8/10 | FAIL |
+| R2: Auth context | #50 | 5.0/10 | FAIL |
+
+**Strengths:** Top bug fixes and feature implementations were excellent. B2 fix was textbook.
+
+**Weaknesses:** Both refactor PRs failed — R1 reintroduced the B2 deleted-task bug; R2 only created the context file without wiring it into the app.
+
 ## Fairness Rules
 
 See [RULES.md](./RULES.md) for complete methodology.
