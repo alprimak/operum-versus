@@ -3,17 +3,39 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 let accessToken: string | null = null;
 let refreshToken: string | null = null;
 let refreshPromise: Promise<boolean> | null = null;
+const tokenListeners = new Set<(token: string | null) => void>();
+
+function notifyTokenListeners(): void {
+  for (const listener of tokenListeners) {
+    listener(accessToken);
+  }
+}
+
+export function subscribeToTokenChanges(
+  listener: (token: string | null) => void
+): () => void {
+  tokenListeners.add(listener);
+  return () => {
+    tokenListeners.delete(listener);
+  };
+}
+
+export function getAccessToken(): string | null {
+  return accessToken;
+}
 
 export function setTokens(access: string, refresh: string): void {
   accessToken = access;
   refreshToken = refresh;
   localStorage.setItem('accessToken', access);
   localStorage.setItem('refreshToken', refresh);
+  notifyTokenListeners();
 }
 
 export function loadTokens(): void {
   accessToken = localStorage.getItem('accessToken');
   refreshToken = localStorage.getItem('refreshToken');
+  notifyTokenListeners();
 }
 
 export function clearTokens(): void {
@@ -21,6 +43,7 @@ export function clearTokens(): void {
   refreshToken = null;
   localStorage.removeItem('accessToken');
   localStorage.removeItem('refreshToken');
+  notifyTokenListeners();
 }
 
 async function refreshAccessToken(): Promise<boolean> {
@@ -88,10 +111,16 @@ export async function apiRequest<T>(
 // Auth
 export const auth = {
   register: (data: { email: string; password: string; name: string }) =>
-    apiRequest('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
+    apiRequest<{ user: any; accessToken: string; refreshToken: string }>('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
   login: (data: { email: string; password: string }) =>
-    apiRequest('/auth/login', { method: 'POST', body: JSON.stringify(data) }),
-  me: () => apiRequest('/auth/me'),
+    apiRequest<{ user: any; accessToken: string; refreshToken: string }>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  me: () => apiRequest<{ user: any }>('/auth/me'),
 };
 
 // Projects
