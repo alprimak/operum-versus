@@ -42,7 +42,6 @@ describe('Dashboard', () => {
     expect(res.body.totalTasks).toBe(3);
   });
 
-  // This test SHOULD pass but FAILS due to BUG B2
   it('should not count deleted tasks', async () => {
     // Create 3 tasks
     const taskIds: string[] = [];
