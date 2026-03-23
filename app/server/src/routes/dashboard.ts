@@ -1,18 +1,13 @@
 import { Router, Response } from 'express';
-import { getDb } from '../models/database.js';
 import { authenticateToken, AuthRequest } from '../middleware/auth.js';
+import { DashboardRepository } from '../db/dashboardRepository.js';
 
 export const dashboardRouter = Router();
 dashboardRouter.use(authenticateToken);
+const dashboardRepository = new DashboardRepository();
 
 dashboardRouter.get('/stats', (req: AuthRequest, res: Response) => {
-  const db = getDb();
-
-  // Get all projects user is a member of
-  const projectIds = db.prepare(`
-    SELECT project_id FROM project_members WHERE user_id = ?
-  `).all(req.userId) as any[];
-
+  const projectIds = dashboardRepository.listProjectIdsForUser(req.userId!);
   if (projectIds.length === 0) {
     res.json({
       totalTasks: 0,
@@ -24,49 +19,17 @@ dashboardRouter.get('/stats', (req: AuthRequest, res: Response) => {
     return;
   }
 
-  const ids = projectIds.map((p: any) => p.project_id);
-  const placeholders = ids.map(() => '?').join(',');
-
-  const totalTasks = db.prepare(`
-    SELECT COUNT(*) as count FROM tasks
-    WHERE project_id IN (${placeholders})
-    AND deleted_at IS NULL
-  `).get(...ids) as any;
-
-  const completedTasks = db.prepare(`
-    SELECT COUNT(*) as count FROM tasks
-    WHERE project_id IN (${placeholders})
-    AND status = 'done'
-    AND deleted_at IS NULL
-  `).get(...ids) as any;
-
-  const overdueTasks = db.prepare(`
-    SELECT COUNT(*) as count FROM tasks
-    WHERE project_id IN (${placeholders})
-    AND due_date < datetime('now')
-    AND status != 'done'
-    AND deleted_at IS NULL
-  `).get(...ids) as any;
-
-  const tasksByStatus = db.prepare(`
-    SELECT status, COUNT(*) as count FROM tasks
-    WHERE project_id IN (${placeholders})
-    AND deleted_at IS NULL
-    GROUP BY status
-  `).all(...ids) as any[];
-
-  const tasksByPriority = db.prepare(`
-    SELECT priority, COUNT(*) as count FROM tasks
-    WHERE project_id IN (${placeholders})
-    AND deleted_at IS NULL
-    GROUP BY priority
-  `).all(...ids) as any[];
+  const totalTasks = dashboardRepository.getTotalTasks(projectIds);
+  const completedTasks = dashboardRepository.getCompletedTasks(projectIds);
+  const overdueTasks = dashboardRepository.getOverdueTasks(projectIds);
+  const tasksByStatus = dashboardRepository.getTasksByStatus(projectIds);
+  const tasksByPriority = dashboardRepository.getTasksByPriority(projectIds);
 
   res.json({
-    totalTasks: totalTasks.count,
-    completedTasks: completedTasks.count,
-    overdueTasks: overdueTasks.count,
-    tasksByStatus: Object.fromEntries(tasksByStatus.map((r: any) => [r.status, r.count])),
-    tasksByPriority: Object.fromEntries(tasksByPriority.map((r: any) => [r.priority, r.count])),
+    totalTasks,
+    completedTasks,
+    overdueTasks,
+    tasksByStatus: Object.fromEntries(tasksByStatus.map((r) => [r.status, r.count])),
+    tasksByPriority: Object.fromEntries(tasksByPriority.map((r) => [r.priority, r.count])),
   });
 });
